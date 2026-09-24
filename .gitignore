@@ -1,0 +1,22 @@
+# data (원본은 git에 올리지 않음 — 제출 zip에만 포함)
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# outputs
+outputs/*
+!outputs/.gitkeep
+
+# python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+*.egg-info/
+.venv/
+venv/
+
+# os / ide
+.DS_Store
+.idea/
+.vscode/
