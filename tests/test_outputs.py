@@ -66,6 +66,29 @@ class TestOutputs(unittest.TestCase):
                 self.assertTrue((t["note"] == "누수 변수 — 비교용").all())
                 self.assertIn("누수 변수 — 비교용", (d / "report.md").read_text(encoding="utf-8"))
 
+    def test_experiment_tables_have_ceilings(self):
+        for d in DIRS:
+            for name in ("exp_ab", "exp_class_weight", "exp_dummies", "exp_baseline_v0", "perf_range",
+                         "exp_threshold_cn7", "exp_budget_cn7"):
+                f = d / "tables" / f"{name}.csv"
+                if not f.exists():
+                    continue
+                t = pd.read_csv(f)
+                with self.subTest(file=str(f)):
+                    self.assertIn("row_P_ceiling", t.columns)
+                    self.assertIn("row_F1_ceiling", t.columns)
+
+    def test_baseline_v0_reproduced(self):
+        d = ROOT / "outputs"
+        f = d / "tables" / "exp_baseline_v0.csv"
+        if not f.exists():
+            self.skipTest("대회 데이터 실행 결과 없음")
+        t = pd.read_csv(f, dtype={"step": str})
+        c = t[t["product"] == "cn7"].set_index("step")
+        if "0" in c.index:
+            self.assertAlmostEqual(c.loc["1", "row_ap"], c.loc["0", "row_ap"], places=6,
+                                   msg="v0 설정 재현값이 archive 보고값과 다름")
+
     def test_report_notes(self):
         for d in DIRS:
             r = (d / "report.md").read_text(encoding="utf-8")

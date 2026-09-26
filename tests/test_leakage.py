@@ -146,6 +146,27 @@ class TestSplits(unittest.TestCase):
             self.assertEqual(ft.groupby("shot_id")[f"fold_{mode}_r0"].nunique().max(), 1)
 
 
+class TestExperimentSplits(unittest.TestCase):
+    def test_pooled_splits_are_union_of_product_folds(self):
+        from src import experiments as E
+        cfg, data = synthetic()
+        frames = {p: (lab, None) for p, lab in data["labeled"].items()}
+        products = list(frames)
+        lab, labs, offsets = E.pooled_frame(frames, products)
+        for mode in cfg["cv"]["modes"]:
+            pooled = E.pooled_splits_fn(labs, offsets, mode, cfg)(0)
+            per = [cv_mod.cv_splits(x, mode, cfg, 0) for x in labs]
+            for k, (tr, va) in enumerate(pooled):
+                expect = set(np.concatenate([per[i][k][1] + offsets[i] for i in range(len(labs))]))
+                self.assertEqual(set(va), expect)
+                self.assertFalse(set(lab.shot_id.iloc[tr]) & set(lab.shot_id.iloc[va]))
+
+    def test_experiment_models_not_selection_candidates(self):
+        cfg = load_cfg()
+        from src.models import BASE_MODEL
+        self.assertFalse(set(BASE_MODEL) & set(cfg["models"]), "실험 변형 모델이 본 후보(config.models)에 들어감")
+
+
 class TestFitOnTrainOnly(unittest.TestCase):
     def setUp(self):
         cfg, data = synthetic()
