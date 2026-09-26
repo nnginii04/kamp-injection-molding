@@ -1,0 +1,8 @@
+# 줄바꿈을 LF 로 통일 (Windows/macOS 팀원 간 PR 에 줄바꿈 차이가 섞이지 않게)
+* text=auto eol=lf
+
+# 바이너리
+*.png binary
+*.jpg binary
+*.joblib binary
+*.zip binary
