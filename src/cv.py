@@ -106,21 +106,26 @@ def inner_threshold(model, X, y, groups, n_splits, seed) -> float:
 
 
 def run_cv(lab: pd.DataFrame, feats: list[str], model_names: list[str], cfg: dict, tag: str, mode: str,
-           log=print):
+           log=print, splits_fn=None, groups=None):
+    """splits_fn(rep) → [(train, valid)] 를 주면 그 분할을 쓴다 (예: 통합 모델에 제품별 fold 를 합친 분할).
+    기본은 cv_splits (= outputs/fold_id.csv 와 같은 분할). groups 는 내부 임계값용 그룹(기본: mode 그룹)."""
     cvc, seed = cfg["cv"], cfg["seed"]
     X = lab[feats].reset_index(drop=True)
     y = lab["y"].to_numpy()
     lab = lab.reset_index(drop=True)
-    groups = make_groups(lab, mode, cvc.get("block_shots", 10))
+    if groups is None:
+        groups = make_groups(lab, mode, cvc.get("block_shots", 10))
     records, metrics_rows, fitted = [], [], {}
     for rep in range(cvc["n_repeats"]):
-        splits = cv_splits(lab, mode, cfg, rep)
+        splits = splits_fn(rep) if splits_fn else cv_splits(lab, mode, cfg, rep)
         for name in model_names:
             t0 = time.time()
             oof_p = np.zeros(len(y))
             oof_pred = np.zeros(len(y), dtype=int)
+            oof_fold = np.full(len(y), -1)
             thr_list = []
             for k, (tr, va) in enumerate(splits):
+                oof_fold[va] = k
                 base = make_model(name, seed)
                 if y[tr].sum() == 0:  # 학습 fold에 불량이 하나도 없으면 지도학습 불가 → 정보 없음 처리
                     log(f"  ! [{tag}/{mode}] repeat {rep} fold {k}: 학습 fold에 불량 없음 → {name} 예측 생략")
@@ -134,7 +139,7 @@ def run_cv(lab: pd.DataFrame, feats: list[str], model_names: list[str], cfg: dic
                 thr_list.append(thr)
                 if rep == 0:
                     fitted[(mode, name, k)] = (m, va)
-            oof = pd.DataFrame({"row": np.arange(len(y)), "y": y, "p": oof_p, "pred": oof_pred,
+            oof = pd.DataFrame({"row": np.arange(len(y)), "y": y, "p": oof_p, "pred": oof_pred, "fold": oof_fold,
                                 "shot_id": lab["shot_id"].to_numpy(), "group": groups,
                                 "product": lab["product"].to_numpy(), "row_id": lab["row_id"].to_numpy()})
             oof["repeat"], oof["model"], oof["dataset"], oof["cv_mode"] = rep, name, tag, mode

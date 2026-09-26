@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 from src import audit as audit_mod  # noqa: E402
-from src import errors, evaluate, features, final, known_facts, report  # noqa: E402
+from src import errors, evaluate, experiments, features, final, known_facts, report  # noqa: E402
 from src.cv import fold_defect_check, fold_table, make_groups, run_cv  # noqa: E402
 from src.data import assign_shots, load_all  # noqa: E402
 from src.evaluate import shot_types  # noqa: E402
@@ -226,6 +226,15 @@ def main():
         ablation.insert(0, "note", "누수 변수 — 비교용")
         ablation.to_csv(tab_dir / "ablation_pair_position.csv", index=False, encoding="utf-8-sig")
 
+    # 추가 실험 (Phase 3): 같은 분할, 모델 선택에는 미사용
+    exp_tables, exp_extra = {}, {}
+    run_exp = cfg.get("experiments", {}).get("enabled") and "separate" in cfg["scenarios"]
+    if run_exp:
+        log("[5c/9] 추가 실험 (제품별 vs 통합, class_weight, 기준선) — 모델 선택에는 미사용")
+        r = experiments.run_cv_experiments(frames, products, feats_by["separate"], metrics, oof_all, cfg, audit,
+                                           log=log)
+        exp_tables, exp_extra = r["tables"], r["extra_metrics"]
+
     # 6. 선택 + 신뢰구간 ----------------------------------------------------------
     log("[6/9] 모델 선택 및 신뢰구간")
     sel = cfg["selection"]
@@ -241,6 +250,19 @@ def main():
             f"기준선 대비 {c['lift_vs_dummy']:.2f}배")
         if not c["beats_chance"]:
             log(f"  ⚠ {p}: 최고 모델도 무작위 기준선의 {c['lift_vs_dummy']:.2f}배 → 공정변수만으로는 불량 예측이 거의 불가능")
+
+    if run_exp:
+        log("[6b/9] 추가 실험 (임계값·검사비율, 이전 베이스라인 비교, 성능 범위, holdout 설계, 가상 선택)")
+        exp_tables.update(experiments.run_post_selection(
+            frames, products, feats_by["separate"], metrics, oof_all, table, choices, cfg, audit, exp_extra,
+            fold_check, ROOT, args.synthetic, log=log))
+        for k, t in exp_tables.items():
+            if isinstance(t, pd.DataFrame):
+                t.to_csv(tab_dir / f"{k}.csv", index=False, encoding="utf-8-sig")
+        for _, h in exp_tables.get("hypothetical_selection", pd.DataFrame()).iterrows():
+            if h.changes_final_model:
+                log(f"  ⚠ {h['product']}: 실험 모델까지 후보에 넣으면 같은 규칙으로 '{h.hypothetical_choice}' 가 선택됨 "
+                    f"(현재 '{h.actual_choice}'). 적용하지 않고 보고만 함")
 
     # 비교 그림: 모델별 샷/블록 CV 나란히
     modes = cfg["cv"]["modes"]
@@ -346,7 +368,7 @@ def main():
     (out / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
     (out / "run_log.txt").write_text("\n".join(log_lines), encoding="utf-8")
     report.write(out / "report.md", cfg, audit, dropped, table, ci, choices, final_summ, err, type_tab,
-                 manifest, holdout_info, fold_check=fold_check, ablation=ablation)
+                 manifest, holdout_info, fold_check=fold_check, ablation=ablation, exp=exp_tables)
     log(f"완료: {out/'report.md'}  ({manifest['runtime_sec']}s)")
 
 

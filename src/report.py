@@ -48,9 +48,20 @@ def fold_check_summary(fold_check: pd.DataFrame) -> pd.DataFrame:
     return t.reset_index()
 
 
+def ceiling_text(audit) -> str:
+    return "행 단위 성능 상한(짝 두 행은 예측이 같아 넘을 수 없음): " + ", ".join(
+        f"{p.upper()} 정밀도 {a['row_precision_ceiling']:.3f} / F1 {a['row_f1_ceiling']:.3f}" for p, a in audit.items())
+
+
+def _cols(t, keep):
+    return t[[c for c in keep if c in t.columns]]
+
+
 def write(path, cfg, audit, dropped, table, ci, choices, final_summ, err, type_tab, manifest, holdout_info=None,
-          fold_check=None, ablation=None):
+          fold_check=None, ablation=None, exp=None):
+    exp = exp or {}
     modes = cfg["cv"]["modes"]
+    CEIL = f"> {ceiling_text(audit)}\n"
     sel = cfg["selection"]
     L = [f"# 사출성형 품질불량 사전예측 — 실행 결과 ({cfg['run_name']})\n",
          "> 자동 생성 문서. 숫자는 `run_all.py` 실행 시점의 결과이며 보고서 작성의 근거 자료로 사용.\n"]
@@ -110,7 +121,23 @@ def write(path, cfg, audit, dropped, table, ci, choices, final_summ, err, type_t
                      f"{int(cn.groups_with_defect.iloc[0])}개뿐 → 블록 CV 를 5-fold 로 하면 검증 fold 에 불량 0개가 생김"
                      f" (위 표 `folds_without_defect`). 그래서 모든 제품·CV 방식을 3-fold 로 통일")
             L.append("- 블록 수가 적어 반복(repeat)을 바꿔도 불량 블록의 배분은 거의 같음 → CN7 블록 CV 의 반복 간 표준편차는 "
-                     "'분할 운'의 일부(정상 블록 배분)만 반영함\n")
+                     "'분할 운'의 일부(정상 블록 배분)만 반영함")
+        al = exp.get("_cn7_block_alloc")
+        if al:
+            L.append(f"- **CN7 block CV 는 매우 비관적인 조건**: 검증 fold 별 불량 배분이 {al['valid']} 이라, "
+                     f"불량이 가장 많은 fold 는 **불량 {al['train_for_largest']}행만으로 학습해 {max(al['valid'])}행을 맞혀야** 함. "
+                     "그래서 성능은 shot CV(낙관) ~ block CV(비관) 사이의 **범위**로 제시함 (2-1 아래 '성능 범위' 표)")
+        L.append("")
+    hd = exp.get("holdout_designs")
+    if hd is not None and len(hd):
+        L.append("**holdout 을 쓰지 않은 이유** — 25% 를 떼어 둘 때 holdout 에 들어가는 불량 수 "
+                 f"(무작위 설계는 seed {cfg['experiments']['holdout_sim']['seeds']}개)\n")
+        L.append(md(hd, floatfmt=2))
+        L.append("\n- CN7 은 불량이 한 구간에 몰려 있어 시간순 holdout 은 불량 0개, 블록 층화 holdout 은 불량 2행뿐, "
+                 "블록 무작위는 불량 0개일 확률이 높거나 반대로 거의 전부가 빠져 학습 쪽에 1행만 남기도 함 → "
+                 "어떤 설계도 '평가할 수 있는 크기'의 holdout 이 되지 않음")
+        L.append("- 그래서 holdout 대신 labeled 전 행의 교차검증 예측(`predictions_labeled_cv.csv`)을 테스트 예측으로 사용 "
+                 "(`holdout.enabled=false`, 팀 확정 전까지 유지)\n")
     L.append("\n".join(f"- `{k}`: {v}" for k, v in MODEL_DESC.items() if k in cfg["models"]) + "\n")
     L.append("### 2-1. 핵심 지표 (샷 CV vs 블록 CV)\n")
     L.append("`row_f1` = 학습 fold 내부 F1 최적 임계값 기준, `row_f1@2%` = 위험 상위 2%만 불량 판정했을 때 "
@@ -118,6 +145,13 @@ def write(path, cfg, audit, dropped, table, ci, choices, final_summ, err, type_t
     pv = _pivot(table, ["shot_ap", "shot_ap_sd", "row_ap", "row_f1", "row_f1@2%", "row_recall@10%"], modes)
     sort_col = f"shot_ap[{sel['cv_mode']}]" if f"shot_ap[{sel['cv_mode']}]" in pv.columns else pv.columns[3]
     L.append(md(pv.sort_values(["product", sort_col], ascending=[True, False])))
+    L.append(CEIL)
+    pr = exp.get("perf_range")
+    if pr is not None and len(pr):
+        L.append("**성능 범위 — 선택 모델의 block CV(비관) ~ shot CV(낙관)** (pooled OOF, 반복 평균)\n")
+        L.append(md(pr))
+        L.append("\n실제 현장 성능은 이 범위 안 어딘가로 봐야 함: 처음 보는 생산 구간이면 block 쪽, "
+                 "이미 겪은 운전 상태가 반복되면 shot 쪽에 가까움.\n")
     L.append("\n> ※ `dummy` 의 ROC-AUC 가 0.5 에서 벗어나는 것(예: 블록 CV 에서 0.3 안팎)은 **fold 별 상수 예측을 합친 착시**입니다. "
              "dummy 는 fold 마다 학습 불량률 하나만 예측하는데, fold 마다 그 값이 달라서 OOF 를 이어 붙이면 "
              "'불량이 적은 학습 fold 에서 나온 점수'가 불량이 많은 검증 fold 에 붙는 식의 인위적 순서가 생깁니다. "
@@ -144,6 +178,92 @@ def write(path, cfg, audit, dropped, table, ci, choices, final_summ, err, type_t
                                                        if c.startswith(("shot_ap", "row_ap", "row_roc_auc"))]
         L.append(md(ablation[show].sort_values(["product", "cv_mode", "model"])))
         L.append("\n켰을 때 오르는 만큼이 '정답이 새어 들어와 생긴 가짜 성능'입니다.\n")
+
+    if exp:
+        L.append("### 추가 실험 공통 사항\n")
+        L.append("- 모든 실험은 `fold_id.csv` 와 같은 분할(shot·block), 지표는 **pooled OOF**(반복마다 fold 를 이어 붙여 계산 → "
+                 "반복 평균·표준편차). `*_foldmean` 은 fold 별 값의 평균으로 **참고용**")
+        L.append("- 모델 선택 규칙(block · shot_ap · 1-SE)은 그대로. 실험 모델은 선택 후보가 아님 (2-8 에서 '넣었다면'만 보고)\n")
+    keep = ["experiment", "class_weight", "product", "cv_mode", "model", "row_ap", "row_ap_sd", "shot_ap", "shot_ap_sd",
+            "row_roc_auc", "row_recall@10%", "row_f1@2%", "row_ap_foldmean", "row_P_ceiling", "row_F1_ceiling"]
+    t = exp.get("exp_ab")
+    if t is not None and len(t):
+        L.append("### 2-4. 제품별(A) vs 통합(B, 제품 구분 변수 `is_rg3`)\n")
+        L.append("통합 모델도 제품별 fold k 를 합친 같은 분할로 학습·평가하고, 성능은 제품별로 나눠 계산.\n")
+        L.append(md(_cols(t, keep).sort_values(["product", "cv_mode", "model", "experiment"])))
+        d = exp.get("exp_domain_auc")
+        if d is not None and len(d):
+            L.append("\n**도메인 분류기 AUC** — 공정변수만으로 CN7 과 RG3 를 구분할 수 있는가 (5-fold, shot 단위 그룹)\n")
+            L.append(md(d))
+            auc = d.set_index("domain_classifier")["roc_auc"]
+            tree_max = auc[[i for i in auc.index if i.startswith("트리")]].max()
+            lin = auc[[i for i in auc.index if i.startswith("선형")]].max()
+            L.append(f"\n트리 AUC {tree_max:.3f}: 공정값의 **조합·분포 모양**으로 두 제품이 완전히 갈림. 선형 AUC {lin:.3f}: "
+                     "파일마다 따로 표준화돼 평균·분산 차이가 지워져 선형 경계로는 구분이 안 됨(0.5 아래는 분할에 따른 흔들림). "
+                     "→ 두 제품은 같은 분포로 볼 수 없어 **제품별 모델이 기본**, 통합은 비교 실험으로만.")
+            ab = t.pivot_table(index=["product", "cv_mode", "model"], columns="experiment", values="shot_ap")
+            if ab.shape[1] == 2:
+                a_col, b_col = sorted(ab.columns)
+                per = (ab[b_col] > ab[a_col]).groupby(level="product").agg(["sum", "size"])
+                L.append("- shot_ap 기준 통합(B)이 제품별(A)보다 높은 조합 수: "
+                         + ", ".join(f"{p.upper()} {int(r['sum'])}/{int(r['size'])}" for p, r in per.iterrows())
+                         + " (신호가 없는 제품은 둘 다 기준선 수준이라 우열이 의미 없음)\n")
+    t = exp.get("exp_class_weight")
+    if t is not None and len(t):
+        L.append("### 2-5. class_weight: None vs balanced (SMOTE 미사용)\n")
+        L.append(md(_cols(t, keep).sort_values(["product", "cv_mode", "model", "class_weight"])))
+        cw = t.pivot_table(index=["product", "cv_mode", "model"], columns="class_weight", values="shot_ap")
+        if "none" in cw.columns:
+            other = [c for c in cw.columns if c != "none"]
+            bal = cw[other].bfill(axis=1).iloc[:, 0]
+            diff = (cw["none"] - bal).rename("Δ shot_ap (none − balanced)").reset_index()
+            L.append("\n**가중치를 뺐을 때 shot_ap 변화**\n")
+            L.append(md(diff))
+            for (p, mode), g in diff.groupby(["product", "cv_mode"]):
+                col = "Δ shot_ap (none − balanced)"
+                up = g.loc[g[col] > 0.01, "model"].tolist()
+                down = g.loc[g[col] < -0.01, "model"].tolist()
+                L.append(f"- {p.upper()} {mode}: 가중치 없음이 높음 {up or '없음'} / balanced 가 높음 {down or '없음'} "
+                         "(|Δ| ≤ 0.01 은 차이 없음으로 봄)")
+        L.append("\n- 가중치는 확률의 크기만이 아니라 **학습된 경계(점수 순서)도 바꿈** → AP 도 달라짐. 방향은 모델마다 다름")
+        L.append("- 이 비교는 보고용. 본 모델 후보(config.models)는 balanced 그대로이며, 선택에 미치는 영향은 2-8 참고\n")
+    t = exp.get("exp_dummies")
+    if t is not None and len(t):
+        L.append("### 2-6. 기준선 3종\n")
+        L.append(md(_cols(t, keep).sort_values(["product", "cv_mode", "model"])))
+        L.append("\n- 세 기준선 모두 PR-AUC ≈ 불량률. most_frequent·stratified 는 재현율@10% ≈ 0.1 (무작위 검사와 같음)")
+        L.append("- prior(dummy) 만 block CV 에서 ROC-AUC·재현율이 0.5·0.1 에서 벗어나는 것은 fold 별 상수 예측을 합친 착시(2-1 주석)"
+                 " → '무작위 기준선'으로는 most_frequent·stratified 를 보는 것이 정확\n")
+    t = exp.get("exp_baseline_v0")
+    if t is not None and len(t):
+        L.append("### 2-7. 이전 베이스라인(archive/baseline_v0_yejin)과 비교 — 왜 0.476 → 0.19~0.36 인가\n")
+        L.append(md(_cols(t, ["product", "step", "change", "model", "cv", "repeats", "row_ap", "row_ap_sd", "shot_ap",
+                             "row_ap_foldmean", "row_P_ceiling", "row_F1_ceiling"])))
+        c = t[t["product"] == "cn7"].set_index("step")
+        if {"1", "2", "3", "4", "5", "6"} <= set(c.index):
+            r = c["row_ap"]
+            same = "0" in c.index and abs(r["1"] - r["0"]) < 1e-6
+            L.append(f"\n- 1단계: v0 설정을 그대로 재현하면 CN7 row PR-AUC {r['1']:.3f}"
+                     + (" — archive 보고값과 **정확히 같음** → 차이는 코드가 아니라 검증 조건·모델 설정에서 옴" if same else ""))
+            L.append(f"- 2단계 (분할 운): 같은 5-fold 라도 분할을 바꿔 {c.loc['2', 'repeats']}회 반복하면 "
+                     f"{r['2']:.3f} ± {c.loc['2', 'row_ap_sd']:.3f} ({r['2'] - r['1']:+.3f})")
+            L.append(f"- 3단계 (3-fold): {r['3']:.3f} ({r['3'] - r['2']:+.3f}) — fold 마다 학습 데이터가 줄어듦")
+            L.append(f"- 4단계 (block CV): {r['4']:.3f} ({r['4'] - r['3']:+.3f}) — 이웃 샷까지 막으면 연속 불량 구간을 '옆에서 보고' "
+                     "맞히는 효과가 사라짐")
+            L.append(f"- 5·6단계 (모델 설정 C=1·가중치 없음 → C=0.3·balanced): shot {r['5']:.3f} ({r['5'] - r['3']:+.3f}), "
+                     f"block {r['6']:.3f} ({r['6'] - r['4']:+.3f}) — **검증 조건만큼 큰 하락이 모델 설정에서 옴** (2-5·2-8 참고)")
+            L.append(f"- 정리: 0.476 → 이번 row PR-AUC {r['6']:.3f}(block) ~ {r['5']:.3f}(shot). "
+                     f"shot 단위 AP 로는 {c.loc['6', 'shot_ap']:.3f} ~ {c.loc['5', 'shot_ap']:.3f}. "
+                     "'0.19~0.36' 은 block shot_ap(0.19)와 shot row PR-AUC(0.36)를 섞은 표현이라, "
+                     "같은 지표끼리 비교할 때는 위 두 범위를 쓸 것\n")
+    t = exp.get("hypothetical_selection")
+    if t is not None and len(t):
+        L.append("### 2-8. 실험 모델까지 후보에 넣었다면? (같은 규칙, 보고용 — 적용 안 함)\n")
+        L.append(md(t))
+        if t.changes_final_model.any():
+            L.append("\n⚠ 일부 제품에서 선택이 달라짐 → 팀 합의 후에만 반영\n")
+        else:
+            L.append("\n실험 모델을 넣어도 최종 선택은 같음.\n")
 
     # 3 ------------------------------------------------------------------
     L.append("## 3. 영향요인 및 오류분석\n")
@@ -202,6 +322,26 @@ def write(path, cfg, audit, dropped, table, ci, choices, final_summ, err, type_t
              "자세한 경고는 `predictions_unlabeled_meta.json`")
     if any(a["scale_check"]["both_files_mean0_std1"] and a["scale_check"]["value_overlap_mean"] < 0.5 for a in audit.values()):
         L.append("  - ⚠ labeled/unlabeled가 파일별로 따로 표준화된 것으로 보임 → unlabeled 예측은 참고용")
+    for p in cfg.get("experiments", {}).get("threshold_products", []):
+        tt, bt = exp.get(f"exp_threshold_{p}"), exp.get(f"exp_budget_{p}")
+        if tt is None:
+            continue
+        mdl = tt.model.iloc[0]
+        L.append(f"\n### 4-1. {p.upper()} 최종 모델(`{mdl}`) 판정 기준별 결과 — 교차검증 OOF (개수는 반복당 평균)\n")
+        L.append("**고정 임계값 (모델 점수 기준, 보정 전)**\n")
+        for mode in modes:
+            L.append(f"\n`{mode}` CV\n")
+            L.append(md(_cols(tt[tt.cv_mode == mode], ["threshold", "TP", "FP", "FN", "TN", "검사건수",
+                                                       "precision", "recall"]), floatfmt=2))
+        L.append("\n**검사비율(budget): 점수 상위 k% 만 검사**\n")
+        for mode in modes:
+            L.append(f"\n`{mode}` CV\n")
+            L.append(md(_cols(bt[bt.cv_mode == mode], ["budget", "검사건수", "TP", "FP", "FN", "precision", "recall"]),
+                        floatfmt=2))
+        L.append("\n- block CV 에서는 임계값·검사비율을 바꿔도 TP 가 6행 근처에서 멈춤 — 처음 보는 구간에서는 일부 불량 유형만 잡힘 "
+                 "(유형별로는 3-1 표 참고)")
+        L.append("- 고정 임계값은 모델 점수(보정 전) 기준이라 0.5 가 '불량 확률 50%'를 뜻하지 않음. 운영 판정은 검사비율 기준(config.decision)")
+        L.append(f"\n{CEIL}")
     L.append("\n![](figures/inspection_curve.png)\n")
     for p in choices:
         L.append(f"![](figures/calibration_{p}.png)")

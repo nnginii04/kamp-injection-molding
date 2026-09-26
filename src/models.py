@@ -140,20 +140,48 @@ class Hybrid(ClassifierMixin, BaseEstimator):
         return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
 
 
-def _lgbm(seed):
+class DeterministicRF(RandomForestClassifier):
+    """학습은 병렬, 예측은 단일 스레드. sklearn 은 병렬 예측 때 트리별 확률을 스레드 순서대로 더해
+    실행마다 끝자리(~1e-16)가 달라진다 → 결과 파일 해시가 매번 달라지는 것을 막는다."""
+
+    def predict_proba(self, X):
+        n_jobs = self.n_jobs
+        self.n_jobs = 1
+        try:
+            return super().predict_proba(X)
+        finally:
+            self.n_jobs = n_jobs
+
+
+def _lgbm(seed, class_weight="balanced"):
     if HAS_LGBM:
         return LGBMClassifier(n_estimators=300, learning_rate=0.03, num_leaves=7, max_depth=3,
                               min_child_samples=10, subsample=0.8, subsample_freq=1,
-                              colsample_bytree=0.8, reg_lambda=5.0, class_weight="balanced",
-                              random_state=seed, n_jobs=2, verbose=-1)
+                              colsample_bytree=0.8, reg_lambda=5.0, class_weight=class_weight,
+                              random_state=seed, n_jobs=2, verbose=-1,
+                              deterministic=True, force_row_wise=True)  # 멀티스레드에서도 실행마다 같은 결과
     return HistGradientBoostingClassifier(max_depth=3, learning_rate=0.05, max_iter=300,
                                           min_samples_leaf=10, l2_regularization=5.0,
-                                          class_weight="balanced", random_state=seed)
+                                          class_weight=class_weight, random_state=seed)
 
 
 def make_model(name: str, seed: int):
     if name == "dummy":
         return DummyClassifier(strategy="prior")
+    # --- 추가 실험(Phase 3) 전용 변형: 본 모델 목록(config.models)에 없으면 모델 선택에 쓰이지 않음 ---
+    if name == "dummy_most_frequent":
+        return DummyClassifier(strategy="most_frequent")
+    if name == "dummy_stratified":
+        return DummyClassifier(strategy="stratified", random_state=seed)
+    if name == "logreg_none":
+        return make_pipeline(StandardScaler(), LogisticRegression(C=0.3, class_weight=None, max_iter=5000))
+    if name == "rf_none":
+        return DeterministicRF(n_estimators=300, min_samples_leaf=3, max_features="sqrt",
+                                      class_weight=None, random_state=seed, n_jobs=-1)
+    if name == "lgbm_none":
+        return _lgbm(seed, class_weight=None)
+    if name == "logreg_v0":  # archive/baseline_v0_yejin 의 LogisticRegression(class_weight=None) 재현
+        return make_pipeline(StandardScaler(), LogisticRegression(max_iter=5000))
     if name == "spc_maxz":
         return SPCMaxZ()
     if name == "iforest_normal":
@@ -164,7 +192,7 @@ def make_model(name: str, seed: int):
         return make_pipeline(StandardScaler(),
                              LogisticRegression(C=0.3, class_weight="balanced", max_iter=5000))
     if name == "rf":
-        return RandomForestClassifier(n_estimators=300, min_samples_leaf=3, max_features="sqrt",
+        return DeterministicRF(n_estimators=300, min_samples_leaf=3, max_features="sqrt",
                                       class_weight="balanced_subsample", random_state=seed, n_jobs=-1)
     if name == "lgbm":
         return _lgbm(seed)
@@ -180,6 +208,9 @@ def make_model(name: str, seed: int):
 # 1-SE 규칙에서 '더 단순한 모델'을 고르기 위한 복잡도 순서
 COMPLEXITY = ["dummy", "spc_maxz", "iforest_normal", "iforest_unsup", "logreg", "rf", "lgbm",
               "ensemble", "hybrid"]
+# 추가 실험 변형의 복잡도는 기반 모델과 같게 본다 (가상 선택 계산용)
+BASE_MODEL = {"logreg_none": "logreg", "logreg_v0": "logreg", "rf_none": "rf", "lgbm_none": "lgbm",
+              "dummy_most_frequent": "dummy", "dummy_stratified": "dummy"}
 
 ANOMALY_MODELS = {"spc_maxz", "iforest_normal", "iforest_unsup"}
 
@@ -193,4 +224,10 @@ MODEL_DESC = {
     "lgbm": "LightGBM (부스팅, 얕은 트리+강한 규제)",
     "ensemble": "소프트 보팅 앙상블 (logreg+rf+lgbm)",
     "hybrid": "2단계 결합: 관리도 강한 이탈(정상 기준 최대 |z| 상위 1% 밖) OR 지도학습 앙상블 위험점수",
+    "dummy_most_frequent": "기준선: 항상 다수 클래스(양품) — 점수가 모두 같음",
+    "dummy_stratified": "기준선: 불량률에 맞춰 무작위로 0/1",
+    "logreg_none": "로지스틱 회귀, 클래스 가중치 없음",
+    "rf_none": "랜덤포레스트, 클래스 가중치 없음",
+    "lgbm_none": "LightGBM, 클래스 가중치 없음",
+    "logreg_v0": "이전 베이스라인(v0)의 로지스틱 회귀 (C=1, 가중치 없음)",
 }
