@@ -44,6 +44,54 @@ def group_splits(y, groups, n_splits, seed):
     return splits
 
 
+def cv_splits(lab: pd.DataFrame, mode: str, cfg: dict, rep: int, n_splits: int | None = None):
+    """반복 rep 의 (train, valid) 행 위치 목록. run_cv·fold_id.csv·불확실성 계산이 모두 이 함수를 써서
+    같은 분할을 공유한다 (lab 은 reset_index 된 상태여야 함)."""
+    cvc = cfg["cv"]
+    groups = make_groups(lab, mode, cvc.get("block_shots", 10))
+    return group_splits(lab["y"].to_numpy(), groups, n_splits or cvc["n_splits"], cfg["seed"] + rep)
+
+
+def fold_table(lab: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """팀 공유용 분할표: mold, row_id, shot_id, block_id, fold_<mode>_r<repeat>.
+    다른 모델도 이 파일의 fold 번호로 나누면 run_all.py 와 똑같은 교차검증이 된다."""
+    lab = lab.reset_index(drop=True)
+    out = pd.DataFrame({"mold": lab["product"], "row_id": lab["row_id"], "shot_id": lab["shot_id"],
+                        "block_id": make_groups(lab, "block", cfg["cv"].get("block_shots", 10))})
+    for mode in cfg["cv"]["modes"]:
+        for rep in range(cfg["cv"]["n_repeats"]):
+            fold = np.full(len(lab), -1)
+            for k, (_, va) in enumerate(cv_splits(lab, mode, cfg, rep)):
+                fold[va] = k
+            out[f"fold_{mode}_r{rep}"] = fold
+    return out.sort_values("row_id").reset_index(drop=True)
+
+
+def fold_defect_check(lab: pd.DataFrame, cfg: dict, n_splits_options=(3, 5)) -> pd.DataFrame:
+    """분할 수(n_splits)별로 각 fold 의 검증 쪽 불량 수를 센다 → 불량 0개 fold 가 생기는지 확인.
+    검증 fold 에 불량이 없으면 AP·재현율을 계산할 수 없고, 학습 fold 에 불량이 없으면 지도학습이 불가능하다."""
+    lab = lab.reset_index(drop=True)
+    y = lab["y"].to_numpy()
+    rows = []
+    for mode in cfg["cv"]["modes"]:
+        groups = make_groups(lab, mode, cfg["cv"].get("block_shots", 10))
+        pos_groups = sorted(set(groups[y == 1]))
+        for k_splits in n_splits_options:
+            for rep in range(cfg["cv"]["n_repeats"]):
+                try:
+                    splits = cv_splits(lab, mode, cfg, rep, n_splits=k_splits)
+                except ValueError as e:  # 그룹 수 < n_splits 등
+                    rows.append({"cv_mode": mode, "n_splits": k_splits, "repeat": rep, "error": str(e)})
+                    continue
+                for k, (tr, va) in enumerate(splits):
+                    rows.append({"cv_mode": mode, "n_splits": k_splits, "repeat": rep, "fold": k,
+                                 "groups_with_defect_total": len(pos_groups),
+                                 "valid_defect_rows": int(y[va].sum()),
+                                 "valid_defect_groups": len(set(groups[va][y[va] == 1])),
+                                 "train_defect_rows": int(y[tr].sum())})
+    return pd.DataFrame(rows)
+
+
 def inner_threshold(model, X, y, groups, n_splits, seed) -> float:
     if y.sum() == 0 or len(np.unique(groups)) < n_splits:
         return 0.5
@@ -62,10 +110,11 @@ def run_cv(lab: pd.DataFrame, feats: list[str], model_names: list[str], cfg: dic
     cvc, seed = cfg["cv"], cfg["seed"]
     X = lab[feats].reset_index(drop=True)
     y = lab["y"].to_numpy()
-    groups = make_groups(lab.reset_index(drop=True), mode, cvc.get("block_shots", 10))
+    lab = lab.reset_index(drop=True)
+    groups = make_groups(lab, mode, cvc.get("block_shots", 10))
     records, metrics_rows, fitted = [], [], {}
     for rep in range(cvc["n_repeats"]):
-        splits = group_splits(y, groups, cvc["n_splits"], seed + rep)
+        splits = cv_splits(lab, mode, cfg, rep)
         for name in model_names:
             t0 = time.time()
             oof_p = np.zeros(len(y))

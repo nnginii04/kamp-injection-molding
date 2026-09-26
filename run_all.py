@@ -27,8 +27,8 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 from src import audit as audit_mod  # noqa: E402
-from src import errors, evaluate, features, final, report  # noqa: E402
-from src.cv import make_groups, run_cv  # noqa: E402
+from src import errors, evaluate, features, final, known_facts, report  # noqa: E402
+from src.cv import fold_defect_check, fold_table, make_groups, run_cv  # noqa: E402
 from src.data import assign_shots, load_all  # noqa: E402
 from src.evaluate import shot_types  # noqa: E402
 from src.models import COMPLEXITY, HAS_LGBM  # noqa: E402
@@ -50,6 +50,28 @@ def select_model(table, p, sel, n_repeats):
     return {"scenario": chosen.scenario, "dataset": chosen.dataset, "model": chosen.model, "cv_mode": mode,
             "score": float(chosen[metric]), "best_model": best.model, "best_score": float(best[metric]),
             "dummy": dummy, "lift_vs_dummy": lift}
+
+
+def load_labeled_overlap(cfg, out, log) -> dict:
+    """unlabeled 중 labeled 와 같은 행(사실 10)의 row_id. 대회 파일만으로는 판정할 수 없어(파일별 표준화)
+    external.enabled=true 이고 scripts/verify_public_link.py 결과가 있을 때만 읽는다. 없으면 제품별 None."""
+    products = list(cfg["products"])
+    if not cfg.get("external", {}).get("enabled", False):
+        log("  ⚠ unlabeled 안의 labeled 행(사실 10)은 대회 파일만으로 판정 불가 → in_labeled_train = NaN "
+            "(external.enabled=false)")
+        return {p: None for p in products}
+    f = out / "verification" / "labeled_rows_in_unlabeled.csv"
+    if not f.exists():
+        log(f"  ⚠ external.enabled=true 이지만 {f} 가 없음 → python scripts/verify_public_link.py 를 먼저 실행. "
+            "in_labeled_train = NaN")
+        return {p: None for p in products}
+    t = pd.read_csv(f)
+    res = {}
+    for p in products:
+        ids = t.loc[t["product"] == p, "unlabeled_row_ids"].dropna().astype(str).str.split()
+        res[p] = {int(x) for lst in ids for x in lst}
+    log(f"  in_labeled_train: 공개 원본 검증 결과 사용 ({f.name}) " + ", ".join(f"{p} {len(v)}행" for p, v in res.items()))
+    return res
 
 
 def main():
@@ -106,6 +128,7 @@ def main():
     # 3. 피처 -----------------------------------------------------------------
     log("[3/9] 피처 구성")
     fcfg = cfg["features"]
+    features.validate_feature_config(fcfg)
     base, dropped = features.select_base_features(data, raw_feats, fcfg["drop_constant"])
     use_if = bool(fcfg.get("unlabeled_iforest_score", False))
     if use_if:
@@ -117,15 +140,8 @@ def main():
             for p in data[key]:
                 data[key][p] = features.add_sequence_features(data[key][p], base, w)
         seq_cols = features.sequence_columns(base, w)
-    extra = []
-    if fcfg.get("pair_position"):
-        log("  ⚠ pair_position 사용: 짝 순서는 기록 순서이며 불량 여부와 얽힌 누수로 확인됨 → Ablation 비교용으로만 보고할 것")
-        for key in ("labeled", "unlabeled"):
-            for p in data[key]:
-                data[key][p] = features.add_pair_position(data[key][p])
-        extra.append("pair_first")
     models = [m for m in cfg["models"] if use_if or m != "iforest_unsup"]
-    log(f"  기본 변수 {len(base)}개, 순서 피처 {len(seq_cols or [])}개, 짝 안 위치 변수 {'사용' if extra else '미사용'}, "
+    log(f"  기본 변수 {len(base)}개, 순서 피처 {len(seq_cols or [])}개, 짝 안 위치 변수 미사용(누수), "
         f"unlabeled IF 점수 {'사용' if use_if else '미사용'}")
 
     # 4. (선택) 홀드아웃 --------------------------------------------------------
@@ -153,7 +169,7 @@ def main():
     log("[5/9] 반복 그룹 교차검증: " + ", ".join(cfg["cv"]["modes"]))
     oofs, mets, fitted, frames, feats_by = [], [], {}, {}, {}
     for scenario in cfg["scenarios"]:
-        feats_by[scenario] = features.model_features(base, scenario, use_if, seq_cols, extra)
+        feats_by[scenario] = features.check_feature_list(features.model_features(base, scenario, use_if, seq_cols))
         for name, (lab, unl) in features.scenario_frames(data, scenario).items():
             lab = lab.reset_index(drop=True)
             frames[name] = (lab, unl)
@@ -169,6 +185,46 @@ def main():
     g = metrics.groupby(["cv_mode", "scenario", "dataset", "product", "model"])[num]
     table = g.mean().join(g.std()[["shot_ap", "row_f1", "row_ap"]].add_suffix("_sd")).reset_index()
     table.to_csv(tab_dir / "cv_summary.csv", index=False, encoding="utf-8-sig")
+
+    # 팀 공유용 분할표 + fold 수 점검 (run_cv 와 같은 cv_splits 사용)
+    sep_frames = {p: frames[p][0] for p in products if p in frames}
+    if sep_frames:
+        fold_id = pd.concat([fold_table(lab, cfg) for lab in sep_frames.values()], ignore_index=True)
+        if holdout_info:
+            ho = pd.concat([tf.assign(mold=p)[["mold", "row_id", "shot_id"]] for p, tf in test_frames.items()])
+            fold_id = pd.concat([fold_id.assign(is_holdout=False), ho.assign(is_holdout=True)], ignore_index=True)
+        fold_id.to_csv(out / "fold_id.csv", index=False, encoding="utf-8-sig")
+        fold_check = pd.concat([fold_defect_check(lab, cfg).assign(mold=p) for p, lab in sep_frames.items()],
+                               ignore_index=True)
+        fold_check.to_csv(tab_dir / "fold_defect_check.csv", index=False, encoding="utf-8-sig")
+        log(f"  분할표 저장: {out / 'fold_id.csv'} ({len(fold_id)}행)")
+    else:
+        fold_check = pd.DataFrame()
+
+    # Ablation: 누수 변수(pair_first)를 켰을 때 vs 껐을 때 — 같은 분할, 모델 선택·예측 파일에는 미사용
+    ablation = None
+    acfg = cfg.get("ablation", {}).get("pair_position", {})
+    if acfg.get("enabled") and "separate" in cfg["scenarios"]:
+        log("[5b/9] Ablation: 짝 안 위치 변수(pair_first) — 누수 변수, 비교용")
+        a_models = [m for m in acfg.get("models", []) if m in models]
+        a_rows = []
+        for p in products:
+            lab_a = features.add_pair_position(frames[p][0])
+            feats_a = features.check_feature_list(feats_by["separate"] + ["pair_first"],
+                                                  allow=features.LEAKY_ABLATION_FEATURES)
+            for mode in cfg["cv"]["modes"]:
+                _, m_on, _ = run_cv(lab_a, feats_a, a_models, cfg, p, mode, log=lambda *_: None)
+                a_rows.append(m_on.assign(product=p))
+        met_on = pd.concat(a_rows, ignore_index=True)
+        keys = ["cv_mode", "product", "model"]
+        vals = ["shot_ap", "row_ap", "row_roc_auc", "row_f1@2%", "row_recall@10%"]
+        on = met_on.groupby(keys)[vals].mean()
+        off = metrics[metrics.scenario.eq("separate") & metrics.model.isin(a_models)].groupby(keys)[vals].mean()
+        ablation = off.add_suffix("[OFF]").join(on.add_suffix("[ON 누수]"), how="inner").reset_index()
+        for v in vals:
+            ablation[f"{v} Δ"] = ablation[f"{v}[ON 누수]"] - ablation[f"{v}[OFF]"]
+        ablation.insert(0, "note", "누수 변수 — 비교용")
+        ablation.to_csv(tab_dir / "ablation_pair_position.csv", index=False, encoding="utf-8-sig")
 
     # 6. 선택 + 신뢰구간 ----------------------------------------------------------
     log("[6/9] 모델 선택 및 신뢰구간")
@@ -244,16 +300,37 @@ def main():
     # 9. 최종 학습 + 예측 파일 -----------------------------------------------------
     log("[9/9] 최종 학습·확률 보정·예측 파일")
     pu, pl, pt, final_summ = [], [], [], []
+    overlap = load_labeled_overlap(cfg, out, log)
     for p, c in choices.items():
         tf = test_frames.get(p)
         if tf is not None and c["scenario"] == "pooled":
             tf = tf.assign(is_rg3=int(p == "rg3"))
         u, lpred, tpred, s, _ = final.train_and_predict(p, c, frames, feats_by, oof_all, metrics, cfg, fig_dir,
-                                                        types_by_product[p], tf)
+                                                        types_by_product[p], tf, labeled_overlap=overlap.get(p),
+                                                        log=log)
         pu.append(u), pl.append(lpred), final_summ.append(s)
         if tpred is not None:
             pt.append(tpred)
     pd.concat(pu, ignore_index=True).to_csv(out / "predictions_unlabeled.csv", index=False, encoding="utf-8-sig")
+    unl_meta = {
+        "file": "predictions_unlabeled.csv",
+        "warnings": [
+            "대회 unlabeled 안에 labeled 행이 들어 있음 (공개 원본 검증: " + known_facts.overlap_text()
+            + "). unlabeled 예측을 성능 평가에 쓰거나 unlabeled 로 학습(이상탐지·pseudo-label)하지 말 것.",
+            "labeled/unlabeled 는 파일별로 따로 표준화돼 같은 z값이 다른 물리값 → 점수·확률의 절대값보다 순위를 참고.",
+            "in_labeled_train=True 인 행은 최종 모델과 fold 모델의 학습에 쓰인 행이라 uncertainty 가 과소평가될 수 있음.",
+        ],
+        "in_labeled_train": {p: ("공개 원본 검증 결과로 채움" if overlap.get(p) is not None
+                                 else "NaN — 대회 파일만으로 판정 불가 (external.enabled=false 또는 검증 결과 없음)")
+                             for p in products},
+        "uncertainty": "선택된 CV 방식의 fold 모델 전체(n_splits × n_repeats) 예측의 표준편차 (모델 점수 단위, ddof=1). "
+                       "uncertainty_n = 사용한 모델 수",
+        "models": {s_["product"]: {"model": s_["model"], "cv_mode": s_["cv_mode"], "decision_rule": s_["decision_rule"],
+                                   "threshold_on_score": s_["threshold_on_score"]} for s_ in final_summ},
+        "source": known_facts.SOURCE,
+    }
+    (out / "predictions_unlabeled_meta.json").write_text(json.dumps(unl_meta, ensure_ascii=False, indent=1,
+                                                                    default=str), encoding="utf-8")
     pd.concat(pl, ignore_index=True).to_csv(out / "predictions_labeled_cv.csv", index=False, encoding="utf-8-sig")
     if pt:
         pd.concat(pt, ignore_index=True).to_csv(out / "predictions_holdout.csv", index=False, encoding="utf-8-sig")
@@ -269,7 +346,7 @@ def main():
     (out / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
     (out / "run_log.txt").write_text("\n".join(log_lines), encoding="utf-8")
     report.write(out / "report.md", cfg, audit, dropped, table, ci, choices, final_summ, err, type_tab,
-                 manifest, holdout_info)
+                 manifest, holdout_info, fold_check=fold_check, ablation=ablation)
     log(f"완료: {out/'report.md'}  ({manifest['runtime_sec']}s)")
 
 

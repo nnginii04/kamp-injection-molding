@@ -27,6 +27,12 @@ data/raw/            대회 CSV 4개 (git 제외)
 outputs/             실행 결과 (git 제외)
 ```
 
+## 팀 공유 분할표 (`outputs/fold_id.csv`)
+
+1. `python run_all.py` 를 돌리면 `outputs/fold_id.csv` 가 생깁니다. 열: `mold, row_id(=Unnamed: 0), shot_id, block_id, fold_shot_r0 … fold_block_r4`.
+2. 내 모델에서는 `f = pd.read_csv("outputs/fold_id.csv")` 후 대회 CSV 와 `row_id` 로 합치고, 예: `fold_block_r0 == k` 인 행을 검증, 나머지를 학습에 씁니다 (k = 0, 1, 2).
+3. 모든 `fold_<cv_mode>_r<반복>` 열에 대해 반복하고, 예측을 `row_id`·`fold`·`repeat` 와 함께 저장하면 `run_evaluation.py` 로 같은 기준에서 비교됩니다.
+
 ## 외부 데이터 주의
 
 KAMP 공개 원본은 대회 규정 확인 전까지 **모델 입력 금지**입니다. `scripts/` 의 해석·검증 스크립트만 읽기 전용으로 쓰며,

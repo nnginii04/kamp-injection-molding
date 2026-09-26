@@ -140,8 +140,10 @@ def run_audit(data: dict, feats: list[str], seed: int, fig_dir) -> tuple[dict, d
         unl_key = pd.util.hash_pandas_object(unl[feats].round(10), index=False)
         vc = unl_key.value_counts()
         r["unlabeled_shot_size_hist"] = {int(k): int(v) for k, v in vc.value_counts().sort_index().items()}
+        # z값이 완전히 같은 행 수. 파일별 표준화 때문에 실제로 같은 행이어도 z값이 달라 0 이 나온다
+        # → '겹침 없음'의 근거가 아님 (공개 원본 검증으로는 대부분 겹침, 사실 10)
         lab_key = pd.util.hash_pandas_object(lab[feats].round(10), index=False)
-        r["labeled_rows_found_in_unlabeled"] = int(lab_key.isin(set(unl_key)).sum())
+        r["labeled_rows_same_z_in_unlabeled"] = int(lab_key.isin(set(unl_key)).sum())
 
         use = [c for c in feats if c not in r["constant_in_labeled"]]
         ks = pd.Series({c: ks_2samp(lab[c], unl[c]).statistic for c in use}).sort_values(ascending=False)

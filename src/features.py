@@ -7,12 +7,43 @@
 - (선택, 기본 끔) unlabeled로 학습한 Isolation Forest 점수(if_score)
   ※ v1 진단: labeled/unlabeled가 파일별로 따로 표준화되어 눈금이 달라 labeled에 적용하면 무의미
 - pooled 시나리오: 제품 구분 변수(is_rg3) 추가
+
+금지 변수 (FORBIDDEN_FEATURES, check_feature_list 로 자동 검사)
+- ID·정답: Unnamed: 0(row_id), PassOrFail(y)
+- labeled 에서 상수: Clamp_Open_Position
+- 그룹 번호: shot_id, block_id, shot_size (분할용 식별자일 뿐 공정 정보가 아님)
+- 짝 안 위치: pair_first / pair_position / position_in_shot / cavity_pos
+  → 짝 안 순서는 캐비티가 아니라 원본 기록 순서이고 불량 여부와 얽혀 있음(누수, 사실 6).
+    ablation(비교용)에서만 켤 수 있다.
 """
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import IsolationForest
+
+
+FORBIDDEN_FEATURES = {
+    "Unnamed: 0", "row_id", "PassOrFail", "y", "Clamp_Open_Position",
+    "shot_id", "block_id", "shot_size", "group",
+    "pair_first", "pair_position", "position_in_shot", "cavity_pos",
+}
+LEAKY_ABLATION_FEATURES = {"pair_first"}  # ablation 에서만 허용 (결과표에 '누수 변수 — 비교용' 표시)
+
+
+def check_feature_list(feats: list[str], allow: set[str] | frozenset = frozenset()) -> list[str]:
+    """모델 입력 변수 목록에 금지 변수가 있으면 멈춘다."""
+    bad = sorted((set(feats) & FORBIDDEN_FEATURES) - set(allow))
+    if bad:
+        raise AssertionError(f"모델 입력에 금지 변수가 있습니다: {bad} (src/features.py FORBIDDEN_FEATURES 참고)")
+    return list(feats)
+
+
+def validate_feature_config(fcfg: dict) -> None:
+    """누수로 확인된 옵션을 본 실험에서 켜지 못하게 막는다."""
+    if fcfg.get("pair_position"):
+        raise ValueError("features.pair_position 은 누수 변수(사실 6)라 본 실험에서 쓸 수 없습니다. "
+                         "비교가 필요하면 config.json 의 ablation.pair_position.enabled 를 쓰세요.")
 
 
 def select_base_features(data: dict, feats: list[str], drop_constant: bool) -> tuple[list[str], list[str]]:
