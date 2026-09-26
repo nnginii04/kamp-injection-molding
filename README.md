@@ -1,42 +1,33 @@
-# Injection Molding Defect Prediction
+# 사출성형 품질불량 사전예측 — 팀 최종 베이스라인
 
-사출성형 공정데이터 기반 품질불량 사전예측 및 검사 우선순위 결정
+제6회 K-인공지능 제조데이터 분석 경진대회 · 사출성형기 AI 데이터셋 (CN7 / RG3)
 
-## 실행 방법
+> 🚧 정리 중인 브랜치(`feat/final-baseline`)입니다. 쉬운 설명·결과표·누수 체크리스트가 담긴 전체 README 는 마무리 단계에서 채웁니다.
+
+## 실행
 
 ```bash
 pip install -r requirements.txt
-python run_all.py
+python run_all.py --synthetic --fast   # 데이터 없이 동작 확인 (가짜 데이터, 성능 숫자 무의미) → outputs/synthetic/
+python run_all.py                      # data/raw/ 의 대회 CSV 4개로 전체 실행 → outputs/
+python run_evaluation.py               # 팀 공통 평가 → outputs/evaluation/
 ```
 
-`run_all.py` 하나로 전처리 → 학습 → 평가 → 추론 → 결과파일 생성까지 순서대로 실행됩니다.
-결과는 `outputs/` 에 저장됩니다.
-
-## 데이터
-
-`data/raw/` 에 아래 4개 파일을 넣습니다 (git에는 올리지 않음).
-
-| 파일 | 설명 |
-| --- | --- |
-| moldset_labeled_cn7.csv | CN7 금형 라벨 데이터 (1,211행) |
-| moldset_labeled_rg3.csv | RG3 금형 라벨 데이터 (1,182행) |
-| moldset_unlabeled_cn7.csv | CN7 금형 비라벨 데이터 (35,239행) |
-| moldset_unlabeled_rg3.csv | RG3 금형 비라벨 데이터 (35,941행) |
-
-## 구조
+## 폴더
 
 ```
-configs/config.yaml   시드, 경로, 하이퍼파라미터
-src/preprocess.py     중복 제거, 상수열 제거, 금형 병합
-src/train.py          베이스라인 + 후보 모델 학습
-src/evaluate.py       Repeated Stratified K-Fold, F1, 확률보정
-src/explain.py        SHAP, FN/FP 집중 조건 분석
-src/predict.py        테스트 예측결과 파일 생성
-notebooks/            EDA, 모델링, 오류분석 노트북
-outputs/              예측결과, 지표, 그림
-docs/                 보고서·발표자료
+config.json          모든 설정 (seed, CV, 모델, 판정 기준, feature 옵션, external.enabled=false)
+run_all.py           전체 파이프라인 한 번에 실행
+run_evaluation.py    팀 공통 평가 (evaluation/ 사용)
+src/                 data · audit · features · cv · models · evaluate · errors · final · report · synthetic
+evaluation/          팀 공통 평가 모듈 (예측 파일 형식: evaluation/README.md)
+scripts/             공개 원본 연결·검증 (해석 전용, 기본 꺼짐)
+archive/             이전 베이스라인 보관 (참고용, 실행 대상 아님)
+data/raw/            대회 CSV 4개 (git 제외)
+outputs/             실행 결과 (git 제외)
 ```
 
-## 환경
+## 외부 데이터 주의
 
-Python 3.10+, CPU만으로 실행 가능. 전체 파이프라인은 수 분 내에 완료됩니다.
+KAMP 공개 원본은 대회 규정 확인 전까지 **모델 입력 금지**입니다. `scripts/` 의 해석·검증 스크립트만 읽기 전용으로 쓰며,
+`config.json` 의 `external.enabled` 가 기본 `false` 입니다. 원본 파일을 저장소에 복사하지 마세요.

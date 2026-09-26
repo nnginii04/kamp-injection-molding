@@ -1,0 +1,7 @@
+row_id,product,model,repeat,fold,shot_id,y_true,y_score,y_pred
+0,cn7,baseline_logreg,0,0,cn7_0,0,0.0028,0
+1,cn7,baseline_logreg,0,1,cn7_1,0,0.0026,0
+2,cn7,baseline_logreg,0,1,cn7_1,0,0.0026,0
+3,cn7,baseline_logreg,0,2,cn7_2,0,0.0218,0
+4,cn7,baseline_logreg,0,2,cn7_2,0,0.0218,0
+5,cn7,baseline_logreg,0,0,cn7_3,0,0.0195,0

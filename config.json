@@ -1,0 +1,41 @@
+{
+  "run_name": "final-baseline",
+  "data_dir": "data/raw",
+  "output_dir": "outputs",
+  "products": {
+    "cn7": {"labeled": "moldset_labeled_cn7.csv", "unlabeled": "moldset_unlabeled_cn7.csv"},
+    "rg3": {"labeled": "moldset_labeled_rg3.csv", "unlabeled": "moldset_unlabeled_rg3.csv"}
+  },
+  "id_col": "Unnamed: 0",
+  "label_col": "PassOrFail",
+  "positive_label": 1,
+  "seed": 42,
+
+  "cv": {"n_splits": 3, "n_repeats": 5, "inner_splits": 3, "modes": ["shot", "block"], "block_shots": 10},
+  "holdout": {"enabled": false, "frac": 0.25},
+  "scenarios": ["separate"],
+  "models": ["dummy", "spc_maxz", "iforest_normal", "logreg", "rf", "lgbm", "ensemble", "hybrid"],
+  "selection": {"cv_mode": "block", "metric": "shot_ap", "rule": "one_se"},
+  "decision": {"rule": "budget", "budget": 0.02},
+  "min_lift_vs_dummy": 1.5,
+
+  "features": {
+    "drop_constant": true,
+    "sequence_features": false,
+    "sequence_window": 5,
+    "pair_position": false,
+    "unlabeled_iforest_score": false,
+    "iforest": {"n_estimators": 300, "max_samples": 2048, "contamination": "auto"}
+  },
+
+  "inspection_budgets": [0.01, 0.02, 0.05, 0.10, 0.20],
+  "risk_tiers": {"inspect_now_top": 0.02, "priority_top": 0.10},
+  "bootstrap": {"n": 1000},
+  "error_analysis": {"top_features": 6, "n_bins": 5},
+
+  "external": {
+    "enabled": false,
+    "public_path": "~/Downloads/04. Dataset_Molding.zip",
+    "_note": "KAMP 공개 원본(zip 또는 압축 푼 폴더). 대회 규정 확인 전까지 모델 입력 금지. scripts/link_public.py·verify_public_link.py 의 해석·검증 전용이며 읽기만 한다. run_all.py 는 이 값을 읽지 않는다."
+  }
+}

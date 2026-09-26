@@ -1,0 +1,277 @@
+"""사출성형 품질불량 사전예측 파이프라인 (팀 최종 베이스라인, v2 기반) — 한 번에 실행.
+
+    python run_all.py                 # data/raw/ 의 대회 데이터로 전체 실행 → outputs/
+    python run_all.py --fast          # 반복 수를 줄여 빠르게 확인
+    python run_all.py --synthetic     # 가짜 데이터로 동작만 확인 → outputs/synthetic/ (성능 숫자 무의미)
+
+외부(KAMP 공개 원본) 데이터는 읽지 않는다 (config.external 은 scripts/ 전용).
+
+순서: 데이터 진단 → 피처 → (선택)홀드아웃 분리 → 반복 그룹 CV(샷/블록) 모델 비교 → 모델 선택
+      → 불량유형별 탐지율 → 오류분석 → 최종 학습·확률 보정 → 예측 파일 3종 → report.md
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import platform
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import sklearn
+from sklearn.model_selection import StratifiedGroupKFold
+
+ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT))
+
+from src import audit as audit_mod  # noqa: E402
+from src import errors, evaluate, features, final, report  # noqa: E402
+from src.cv import make_groups, run_cv  # noqa: E402
+from src.data import assign_shots, load_all  # noqa: E402
+from src.evaluate import shot_types  # noqa: E402
+from src.models import COMPLEXITY, HAS_LGBM  # noqa: E402
+from src.plots import plt, savefig  # noqa: E402
+
+
+def select_model(table, p, sel, n_repeats):
+    metric, mode = sel["metric"], sel["cv_mode"]
+    cand = table[(table["product"] == p) & (table.cv_mode == mode) & (table.model != "dummy")].copy()
+    best = cand.sort_values(metric, ascending=False).iloc[0]
+    chosen = best
+    if sel.get("rule") == "one_se" and f"{metric}_sd" in cand.columns:
+        se = float(best[f"{metric}_sd"]) / np.sqrt(max(n_repeats, 1))
+        ok = cand[cand[metric] >= best[metric] - se].copy()
+        ok["cx"] = ok.model.map(lambda m: COMPLEXITY.index(m) if m in COMPLEXITY else 99)
+        chosen = ok.sort_values(["cx", metric], ascending=[True, False]).iloc[0]
+    dummy = float(table[(table["product"] == p) & (table.cv_mode == mode) & (table.model == "dummy")][metric].mean())
+    lift = float(chosen[metric] / dummy) if dummy > 0 else np.nan
+    return {"scenario": chosen.scenario, "dataset": chosen.dataset, "model": chosen.model, "cv_mode": mode,
+            "score": float(chosen[metric]), "best_model": best.model, "best_score": float(best[metric]),
+            "dummy": dummy, "lift_vs_dummy": lift}
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--config", default=str(ROOT / "config.json"))
+    ap.add_argument("--data-dir", default=None)
+    ap.add_argument("--synthetic", action="store_true")
+    ap.add_argument("--fast", action="store_true")
+    args = ap.parse_args()
+
+    cfg = json.loads(Path(args.config).read_text(encoding="utf-8"))
+    if args.fast:
+        cfg["cv"]["n_repeats"] = 2
+        cfg["bootstrap"]["n"] = 200
+    np.random.seed(cfg["seed"])
+
+    data_dir = Path(args.data_dir) if args.data_dir else ROOT / cfg["data_dir"]
+    out = ROOT / cfg["output_dir"]
+    if args.synthetic:
+        from src.synthetic import generate
+        data_dir = generate(ROOT / "data" / "synthetic")
+        out = ROOT / cfg["output_dir"] / "synthetic"
+        cfg["run_name"] += "-SYNTHETIC(성능 숫자 무의미)"
+    fig_dir, tab_dir = out / "figures", out / "tables"
+    for d in (fig_dir, tab_dir):
+        d.mkdir(parents=True, exist_ok=True)
+    t_start = time.time()
+    log_lines = []
+
+    def log(msg):
+        print(msg, flush=True)
+        log_lines.append(msg)
+
+    # 1. 로드 + 샷 그룹 + 불량 유형 -------------------------------------------
+    log("[1/9] 데이터 로드")
+    data = load_all(cfg, data_dir)
+    raw_feats = data["feature_cols"]
+    for p in data["labeled"]:
+        data["labeled"][p] = assign_shots(data["labeled"][p], raw_feats, p)
+        data["unlabeled"][p] = assign_shots(data["unlabeled"][p], raw_feats, f"{p}u")
+    types_by_product = {p: shot_types(lab) for p, lab in data["labeled"].items()}
+    products = list(data["labeled"])
+
+    # 2. 진단 -----------------------------------------------------------------
+    log("[2/9] 데이터 진단")
+    audit, audit_tables = audit_mod.run_audit(data, raw_feats, cfg["seed"], fig_dir)
+    for k, t in audit_tables.items():
+        t.to_csv(tab_dir / f"{k}.csv", encoding="utf-8-sig")
+    (out / "audit.json").write_text(json.dumps(audit, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+    for p, a in audit.items():
+        log(f"  {p}: 불량 샷 {a['defect_shots']} = 양쪽 {a['process_wide_shots(양쪽 불량)']} + 한쪽 "
+            f"{a['cavity_local_shots(한쪽만 불량)']} / 눈금 점검: {a['scale_check']['verdict']}")
+
+    # 3. 피처 -----------------------------------------------------------------
+    log("[3/9] 피처 구성")
+    fcfg = cfg["features"]
+    base, dropped = features.select_base_features(data, raw_feats, fcfg["drop_constant"])
+    use_if = bool(fcfg.get("unlabeled_iforest_score", False))
+    if use_if:
+        features.add_iforest_scores(data, base, fcfg["iforest"], cfg["seed"])
+    seq_cols = None
+    if fcfg.get("sequence_features"):
+        w = int(fcfg.get("sequence_window", 5))
+        for key in ("labeled", "unlabeled"):
+            for p in data[key]:
+                data[key][p] = features.add_sequence_features(data[key][p], base, w)
+        seq_cols = features.sequence_columns(base, w)
+    extra = []
+    if fcfg.get("pair_position"):
+        log("  ⚠ pair_position 사용: 짝 순서는 기록 순서이며 불량 여부와 얽힌 누수로 확인됨 → Ablation 비교용으로만 보고할 것")
+        for key in ("labeled", "unlabeled"):
+            for p in data[key]:
+                data[key][p] = features.add_pair_position(data[key][p])
+        extra.append("pair_first")
+    models = [m for m in cfg["models"] if use_if or m != "iforest_unsup"]
+    log(f"  기본 변수 {len(base)}개, 순서 피처 {len(seq_cols or [])}개, 짝 안 위치 변수 {'사용' if extra else '미사용'}, "
+        f"unlabeled IF 점수 {'사용' if use_if else '미사용'}")
+
+    # 4. (선택) 홀드아웃 --------------------------------------------------------
+    holdout_info, test_frames = None, {}
+    hcfg = cfg.get("holdout", {})
+    if hcfg.get("enabled"):
+        log("[4/9] 홀드아웃 분리 (연속 블록 단위)")
+        counts = {}
+        for p in products:
+            lab = data["labeled"][p].reset_index(drop=True)
+            groups = make_groups(lab, "block", cfg["cv"].get("block_shots", 10))
+            n_splits = max(2, int(round(1 / hcfg["frac"])))
+            tr, te = next(StratifiedGroupKFold(n_splits, shuffle=True, random_state=cfg["seed"])
+                          .split(np.zeros(len(lab)), lab.y, groups))
+            test_frames[p] = lab.iloc[te].reset_index(drop=True)
+            data["labeled"][p] = lab.iloc[tr].reset_index(drop=True)
+            counts[p] = {"dev_rows": len(tr), "dev_defects": int(lab.y.iloc[tr].sum()),
+                         "test_rows": len(te), "test_defects": int(lab.y.iloc[te].sum())}
+        holdout_info = {"frac": hcfg["frac"], "counts": counts}
+        log(f"  {counts}")
+    else:
+        log("[4/9] 홀드아웃 미사용 (labeled 전 행 교차검증 예측을 테스트 예측으로 사용)")
+
+    # 5. CV -------------------------------------------------------------------
+    log("[5/9] 반복 그룹 교차검증: " + ", ".join(cfg["cv"]["modes"]))
+    oofs, mets, fitted, frames, feats_by = [], [], {}, {}, {}
+    for scenario in cfg["scenarios"]:
+        feats_by[scenario] = features.model_features(base, scenario, use_if, seq_cols, extra)
+        for name, (lab, unl) in features.scenario_frames(data, scenario).items():
+            lab = lab.reset_index(drop=True)
+            frames[name] = (lab, unl)
+            for mode in cfg["cv"]["modes"]:
+                o, m, f = run_cv(lab, feats_by[scenario], models, cfg, name, mode, log=log)
+                m["scenario"] = scenario
+                m.loc[m["product"] == "all", "product"] = name if scenario == "separate" else "all"
+                oofs.append(o), mets.append(m)
+                fitted.setdefault(name, {}).update(f)
+    oof_all, metrics = pd.concat(oofs, ignore_index=True), pd.concat(mets, ignore_index=True)
+    metrics.to_csv(tab_dir / "cv_metrics_by_repeat.csv", index=False, encoding="utf-8-sig")
+    num = [c for c in metrics.columns if c not in ("cv_mode", "dataset", "product", "model", "repeat", "scenario")]
+    g = metrics.groupby(["cv_mode", "scenario", "dataset", "product", "model"])[num]
+    table = g.mean().join(g.std()[["shot_ap", "row_f1", "row_ap"]].add_suffix("_sd")).reset_index()
+    table.to_csv(tab_dir / "cv_summary.csv", index=False, encoding="utf-8-sig")
+
+    # 6. 선택 + 신뢰구간 ----------------------------------------------------------
+    log("[6/9] 모델 선택 및 신뢰구간")
+    sel = cfg["selection"]
+    choices, ci = {}, {}
+    for p in products:
+        c = select_model(table, p, sel, cfg["cv"]["n_repeats"])
+        c["beats_chance"] = bool(c["lift_vs_dummy"] >= cfg.get("min_lift_vs_dummy", 1.5))
+        choices[p] = c
+        o = oof_all[(oof_all.dataset == c["dataset"]) & (oof_all.model == c["model"]) & (oof_all.repeat == 0)
+                    & (oof_all["product"] == p) & (oof_all.cv_mode == c["cv_mode"])]
+        ci[p] = evaluate.bootstrap_ci(o, cfg["bootstrap"]["n"], cfg["seed"])
+        log(f"  {p}: {c['model']} ({c['scenario']}, {c['cv_mode']} CV) {sel['metric']}={c['score']:.3f}, "
+            f"기준선 대비 {c['lift_vs_dummy']:.2f}배")
+        if not c["beats_chance"]:
+            log(f"  ⚠ {p}: 최고 모델도 무작위 기준선의 {c['lift_vs_dummy']:.2f}배 → 공정변수만으로는 불량 예측이 거의 불가능")
+
+    # 비교 그림: 모델별 샷/블록 CV 나란히
+    modes = cfg["cv"]["modes"]
+    colors = {"shot": "#9db4d8", "block": "#2f5d9e"}
+    fig, axes = plt.subplots(1, len(products), figsize=(6.2 * len(products), 0.42 * len(models) * 2 + 1.6),
+                             squeeze=False)
+    for ax, p in zip(axes[0], products):
+        t = table[table["product"] == p].copy()
+        t["label"] = t.model + " (" + t.scenario.str[:4] + ")"
+        order = (t[t.cv_mode == sel["cv_mode"]].sort_values("shot_ap").label.tolist())
+        ypos = {lab_: i for i, lab_ in enumerate(order)}
+        h = 0.8 / len(modes)
+        for j, mode in enumerate(modes):
+            tm = t[t.cv_mode == mode].set_index("label").reindex(order)
+            ax.barh(np.arange(len(order)) + (j - (len(modes) - 1) / 2) * h, tm.shot_ap, height=h,
+                    xerr=tm.shot_ap_sd, color=colors.get(mode, "#888"), label=f"{mode} CV", error_kw={"lw": 0.8})
+        ax.set_yticks(range(len(order)), order, fontsize=7)
+        ax.set(title=f"{p.upper()} shot-level AP (mean ± sd)", xlabel="AP")
+        ax.legend(fontsize=8, loc="lower right")
+    savefig(fig, fig_dir / "model_comparison.png")
+
+    fig, ax = plt.subplots(figsize=(5.6, 4.0))
+    budgets = np.linspace(0.005, 0.3, 60)
+    for i, p in enumerate(products):
+        c = choices[p]
+        for mode in modes:
+            o = oof_all[(oof_all.dataset == c["dataset"]) & (oof_all.model == c["model"])
+                        & (oof_all["product"] == p) & (oof_all.cv_mode == mode)]
+            om = o.groupby("row").agg(y=("y", "first"), p=("p", "mean"))
+            ax.plot(budgets * 100, [evaluate.recall_at_budget(om.y, om.p, b) for b in budgets],
+                    color=f"C{i}", ls="-" if mode == sel["cv_mode"] else ":",
+                    label=f"{p.upper()} {c['model']} ({mode} CV)")
+    ax.plot(budgets * 100, budgets, "--", color="gray", label="random inspection")
+    ax.set(xlabel="inspected share of production (%)", ylabel="defects caught (recall)",
+           title="Inspection priority curve (cross-validated)")
+    ax.legend(fontsize=7)
+    savefig(fig, fig_dir / "inspection_curve.png")
+
+    # 7. 불량 유형별 탐지율 -------------------------------------------------------
+    log("[7/9] 불량 유형별 탐지율")
+    type_tab = errors.type_table(oof_all, types_by_product, [0.05, 0.10])
+    type_tab.to_csv(tab_dir / "defect_type_recall.csv", index=False, encoding="utf-8-sig")
+
+    # 8. 오류분석 ---------------------------------------------------------------
+    log("[8/9] 오류분석")
+    err = {}
+    for p, c in choices.items():
+        lab, _ = frames[c["dataset"]]
+        e = errors.analyze(p, c["dataset"], c["model"], c["cv_mode"], lab, feats_by[c["scenario"]], oof_all,
+                           fitted[c["dataset"]], types_by_product[p], cfg, fig_dir)
+        err[p] = e
+        e[1].to_csv(tab_dir / f"importance_{p}.csv", encoding="utf-8-sig")
+        e[2].to_csv(tab_dir / f"error_bins_{p}.csv", index=False, encoding="utf-8-sig")
+        e[3].to_csv(tab_dir / f"fn_cases_{p}.csv", index=False, encoding="utf-8-sig")
+        e[4].to_csv(tab_dir / f"interaction_{p}.csv", index=False, encoding="utf-8-sig")
+
+    # 9. 최종 학습 + 예측 파일 -----------------------------------------------------
+    log("[9/9] 최종 학습·확률 보정·예측 파일")
+    pu, pl, pt, final_summ = [], [], [], []
+    for p, c in choices.items():
+        tf = test_frames.get(p)
+        if tf is not None and c["scenario"] == "pooled":
+            tf = tf.assign(is_rg3=int(p == "rg3"))
+        u, lpred, tpred, s, _ = final.train_and_predict(p, c, frames, feats_by, oof_all, metrics, cfg, fig_dir,
+                                                        types_by_product[p], tf)
+        pu.append(u), pl.append(lpred), final_summ.append(s)
+        if tpred is not None:
+            pt.append(tpred)
+    pd.concat(pu, ignore_index=True).to_csv(out / "predictions_unlabeled.csv", index=False, encoding="utf-8-sig")
+    pd.concat(pl, ignore_index=True).to_csv(out / "predictions_labeled_cv.csv", index=False, encoding="utf-8-sig")
+    if pt:
+        pd.concat(pt, ignore_index=True).to_csv(out / "predictions_holdout.csv", index=False, encoding="utf-8-sig")
+    oof_all.to_csv(tab_dir / "oof_predictions.csv", index=False, encoding="utf-8-sig")
+
+    manifest = {
+        "run_name": cfg["run_name"], "python": platform.python_version(), "numpy": np.__version__,
+        "pandas": pd.__version__, "sklearn": sklearn.__version__, "lightgbm": HAS_LGBM,
+        "seed": cfg["seed"], "cv": cfg["cv"], "selection": sel, "holdout": hcfg,
+        "features": {k: v for k, v in fcfg.items() if k != "iforest"}, "input_sha256": data["hashes"],
+        "runtime_sec": round(time.time() - t_start, 1),
+    }
+    (out / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
+    (out / "run_log.txt").write_text("\n".join(log_lines), encoding="utf-8")
+    report.write(out / "report.md", cfg, audit, dropped, table, ci, choices, final_summ, err, type_tab,
+                 manifest, holdout_info)
+    log(f"완료: {out/'report.md'}  ({manifest['runtime_sec']}s)")
+
+
+if __name__ == "__main__":
+    main()

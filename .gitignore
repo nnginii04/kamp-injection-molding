@@ -1,6 +1,7 @@
 # data (원본은 git에 올리지 않음 — 제출 zip에만 포함)
 data/raw/*
 !data/raw/.gitkeep
+data/synthetic/
 
 # outputs
 outputs/*
