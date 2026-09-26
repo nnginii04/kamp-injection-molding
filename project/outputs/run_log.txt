@@ -1,0 +1,660 @@
+
+==============================================================================
+[1] 데이터 로딩 및 기본 진단
+==============================================================================
+[load] labeled_cn7    (1211, 26)     <- moldset_labeled_cn7.csv
+[load] labeled_rg3    (1182, 26)     <- moldset_labeled_rg3.csv
+[load] unlabeled_cn7  (35239, 25)    <- moldset_unlabeled_cn7.csv
+[load] unlabeled_rg3  (35941, 25)    <- moldset_unlabeled_rg3.csv
+
+------------------------------------------------------------------------------
+[1] labeled / unlabeled 컬럼 일치 여부
+------------------------------------------------------------------------------
+CN7: labeled(타깃 제외) == unlabeled ? True | labeled 에만: [] | unlabeled 에만: []
+RG3: labeled(타깃 제외) == unlabeled ? True | labeled 에만: [] | unlabeled 에만: []
+CN7 vs RG3 labeled 컬럼 순서/이름 동일 ? True
+
+------------------------------------------------------------------------------
+[1] 기본 진단 — labeled_cn7
+------------------------------------------------------------------------------
+shape: (1211, 26)
+columns: ['Unnamed: 0', 'PassOrFail', 'Injection_Time', 'Filling_Time', 'Plasticizing_Time', 'Cycle_Time', 'Clamp_Close_Time', 'Cushion_Position', 'Plasticizing_Position', 'Clamp_Open_Position', 'Max_Injection_Speed', 'Max_Screw_RPM', 'Average_Screw_RPM', 'Max_Injection_Pressure', 'Max_Switch_Over_Pressure', 'Max_Back_Pressure', 'Average_Back_Pressure', 'Barrel_Temperature_1', 'Barrel_Temperature_2', 'Barrel_Temperature_3', 'Barrel_Temperature_4', 'Barrel_Temperature_5', 'Barrel_Temperature_6', 'Hopper_Temperature', 'Mold_Temperature_3', 'Mold_Temperature_4']
+결측치 총합: 0
+중복 행 수 (모든 컬럼 기준): 0
+중복 행 수 (ID 제외, 공정변수 기준): 605  (50.0%)
+PassOrFail class count: {0: 1194, 1: 17}
+PassOrFail class ratio: {0: 0.986, 1: 0.014}
+상수 컬럼: ['Clamp_Open_Position']
+거의 상수 컬럼(최빈값 비율 >= 99%): 없음
+                  column   dtype  n_unique  top_value_share    mean     std     min      max
+              Unnamed: 0   int64      1211            0.001 605.000 349.730   0.000 1210.000
+              PassOrFail   int64         2            0.986   0.014   0.118   0.000    1.000
+          Injection_Time float64        15            0.205  -0.000   1.000  -7.549    2.080
+            Filling_Time float64        14            0.190  -0.000   1.000  -7.777    2.297
+       Plasticizing_Time float64        34            0.066   0.000   1.000  -0.723   20.038
+              Cycle_Time float64        13            0.536   0.000   1.000  -3.706   12.562
+        Clamp_Close_Time float64         3            0.537  -0.000   1.000  -0.902    2.860
+        Cushion_Position float64         5            0.628   0.000   1.000  -2.613    6.944
+   Plasticizing_Position float64        13            0.294  -0.000   1.000  -2.877    1.592
+     Clamp_Open_Position float64         1            1.000   0.000   0.000   0.000    0.000
+     Max_Injection_Speed float64        20            0.155   0.000   1.000  -1.542    9.556
+           Max_Screw_RPM float64         8            0.345  -0.000   1.000  -2.486    3.431
+       Average_Screw_RPM float64         7            0.746   0.000   1.000  -1.291   16.087
+  Max_Injection_Pressure float64         8            0.476   0.000   1.000 -10.861    1.680
+Max_Switch_Over_Pressure float64        17            0.137  -0.000   1.000 -10.463    2.207
+       Max_Back_Pressure float64        25            0.122  -0.000   1.000  -2.852    1.546
+   Average_Back_Pressure float64        15            0.183  -0.000   1.000  -6.632    1.753
+    Barrel_Temperature_1 float64        25            0.101  -0.000   1.000  -2.636    3.197
+    Barrel_Temperature_2 float64        24            0.139  -0.000   1.000  -2.986    3.398
+    Barrel_Temperature_3 float64        19            0.218   0.000   1.000  -2.893    3.135
+    Barrel_Temperature_4 float64        36            0.055   0.000   1.000  -2.047    2.545
+    Barrel_Temperature_5 float64        22            0.176   0.000   1.000  -4.608    3.393
+    Barrel_Temperature_6 float64        13            0.205  -0.000   1.000  -2.719    2.745
+      Hopper_Temperature float64        47            0.074  -0.000   1.000  -2.083    2.550
+      Mold_Temperature_3 float64        39            0.142  -0.000   1.000  -1.910    1.381
+      Mold_Temperature_4 float64        41            0.134  -0.000   1.000  -1.649    1.437
+
+------------------------------------------------------------------------------
+[1] 기본 진단 — labeled_rg3
+------------------------------------------------------------------------------
+shape: (1182, 26)
+columns: ['Unnamed: 0', 'PassOrFail', 'Injection_Time', 'Filling_Time', 'Plasticizing_Time', 'Cycle_Time', 'Clamp_Close_Time', 'Cushion_Position', 'Plasticizing_Position', 'Clamp_Open_Position', 'Max_Injection_Speed', 'Max_Screw_RPM', 'Average_Screw_RPM', 'Max_Injection_Pressure', 'Max_Switch_Over_Pressure', 'Max_Back_Pressure', 'Average_Back_Pressure', 'Barrel_Temperature_1', 'Barrel_Temperature_2', 'Barrel_Temperature_3', 'Barrel_Temperature_4', 'Barrel_Temperature_5', 'Barrel_Temperature_6', 'Hopper_Temperature', 'Mold_Temperature_3', 'Mold_Temperature_4']
+결측치 총합: 0
+중복 행 수 (모든 컬럼 기준): 0
+중복 행 수 (ID 제외, 공정변수 기준): 591  (50.0%)
+PassOrFail class count: {0: 1157, 1: 25}
+PassOrFail class ratio: {0: 0.9788, 1: 0.0212}
+상수 컬럼: ['Clamp_Open_Position']
+거의 상수 컬럼(최빈값 비율 >= 99%): 없음
+                  column   dtype  n_unique  top_value_share     mean     std      min      max
+              Unnamed: 0   int64      1182            0.001 1801.500 341.358 1211.000 2392.000
+              PassOrFail   int64         2            0.979    0.021   0.144    0.000    1.000
+          Injection_Time float64         3            0.986   -0.000   1.000   -8.628    8.570
+            Filling_Time float64         2            0.587   -0.000   1.000   -1.193    0.839
+       Plasticizing_Time float64        27            0.105   -0.000   1.000   -2.736    3.774
+              Cycle_Time float64        10            0.628    0.000   1.000   -1.395   11.762
+        Clamp_Close_Time float64         3            0.430    0.000   1.000   -1.807    1.033
+        Cushion_Position float64         7            0.283    0.000   1.000   -1.912    2.868
+   Plasticizing_Position float64         8            0.303    0.000   1.000   -2.537    2.933
+     Clamp_Open_Position float64         1            1.000    0.000   0.000    0.000    0.000
+     Max_Injection_Speed float64         7            0.271   -0.000   1.000   -2.522    2.188
+           Max_Screw_RPM float64         4            0.428   -0.000   1.000   -2.009    2.020
+       Average_Screw_RPM float64         4            0.584   -0.000   1.000   -1.961    2.656
+  Max_Injection_Pressure float64        10            0.252   -0.000   1.000   -3.391    2.517
+Max_Switch_Over_Pressure float64        17            0.140   -0.000   1.000  -13.791    1.546
+       Max_Back_Pressure float64        16            0.110    0.000   1.000   -2.575    2.092
+   Average_Back_Pressure float64        21            0.091    0.000   1.000   -2.469    2.181
+    Barrel_Temperature_1 float64        25            0.110   -0.000   1.000   -3.167    2.661
+    Barrel_Temperature_2 float64        22            0.096    0.000   1.000   -2.193    3.139
+    Barrel_Temperature_3 float64        17            0.252    0.000   1.000   -2.461    2.456
+    Barrel_Temperature_4 float64        30            0.071    0.000   1.000   -2.292    2.095
+    Barrel_Temperature_5 float64        21            0.183   -0.000   1.000   -4.419    4.358
+    Barrel_Temperature_6 float64        12            0.191   -0.000   1.000   -2.840    2.629
+      Hopper_Temperature float64        52            0.096   -0.000   1.000   -3.071    2.115
+      Mold_Temperature_3 float64        26            0.113   -0.000   1.000   -1.963    1.599
+      Mold_Temperature_4 float64        29            0.122    0.000   1.000   -2.062    1.823
+
+------------------------------------------------------------------------------
+[1] 기본 진단 — unlabeled_cn7
+------------------------------------------------------------------------------
+shape: (35239, 25)
+columns: ['Unnamed: 0', 'Injection_Time', 'Filling_Time', 'Plasticizing_Time', 'Cycle_Time', 'Clamp_Close_Time', 'Cushion_Position', 'Plasticizing_Position', 'Clamp_Open_Position', 'Max_Injection_Speed', 'Max_Screw_RPM', 'Average_Screw_RPM', 'Max_Injection_Pressure', 'Max_Switch_Over_Pressure', 'Max_Back_Pressure', 'Average_Back_Pressure', 'Barrel_Temperature_1', 'Barrel_Temperature_2', 'Barrel_Temperature_3', 'Barrel_Temperature_4', 'Barrel_Temperature_5', 'Barrel_Temperature_6', 'Hopper_Temperature', 'Mold_Temperature_3', 'Mold_Temperature_4']
+결측치 총합: 0
+중복 행 수 (모든 컬럼 기준): 0
+중복 행 수 (ID 제외, 공정변수 기준): 6468  (18.4%)
+상수 컬럼: 없음
+거의 상수 컬럼(최빈값 비율 >= 99%): 없음
+                  column   dtype  n_unique  top_value_share       mean       std        min        max
+              Unnamed: 0   int64     35239            0.000 638822.197 163261.31 114610.000 777220.000
+          Injection_Time float64       115            0.396      0.000      1.00     -2.402      1.726
+            Filling_Time float64       124            0.396     -0.000      1.00     -7.252      1.973
+       Plasticizing_Time float64       307            0.307     -0.000      1.00     -1.275      3.385
+              Cycle_Time float64       251            0.212      0.000      1.00     -3.770      2.090
+        Clamp_Close_Time float64        69            0.199     -0.000      1.00     -1.108      1.114
+        Cushion_Position float64        85            0.330     -0.000      1.00     -0.975      1.036
+   Plasticizing_Position float64       169            0.367     -0.000      1.00     -1.438      1.555
+     Clamp_Open_Position float64        47            0.436      0.000      1.00     -4.626      0.862
+     Max_Injection_Speed float64       242            0.049     -0.000      1.00     -1.708      2.980
+           Max_Screw_RPM float64        21            0.515      0.000      1.00     -0.968      3.115
+       Average_Screw_RPM float64        50            0.515      0.000      1.00     -0.970      1.562
+  Max_Injection_Pressure float64       179            0.172     -0.000      1.00     -1.118      2.289
+Max_Switch_Over_Pressure float64       254            0.090     -0.000      1.00     -0.997      1.253
+       Max_Back_Pressure float64       184            0.119     -0.000      1.00     -1.216      4.607
+   Average_Back_Pressure float64       116            0.515      0.000      1.00     -0.938      2.629
+    Barrel_Temperature_1 float64        87            0.515      0.000      1.00     -0.969      1.066
+    Barrel_Temperature_2 float64        76            0.110      0.000      1.00     -2.666      1.092
+    Barrel_Temperature_3 float64        82            0.158     -0.000      1.00     -5.175      1.057
+    Barrel_Temperature_4 float64       128            0.130      0.000      1.00     -4.485      2.058
+    Barrel_Temperature_5 float64        95            0.192      0.000      1.00     -3.765      2.410
+    Barrel_Temperature_6 float64        81            0.127     -0.000      1.00     -2.390      1.485
+      Hopper_Temperature float64       279            0.019     -0.000      1.00     -4.496      1.774
+      Mold_Temperature_3 float64       182            0.515      0.000      1.00     -0.952      2.046
+      Mold_Temperature_4 float64       267            0.515      0.000      1.00     -0.936      2.298
+
+------------------------------------------------------------------------------
+[1] 기본 진단 — unlabeled_rg3
+------------------------------------------------------------------------------
+shape: (35941, 25)
+columns: ['Unnamed: 0', 'Injection_Time', 'Filling_Time', 'Plasticizing_Time', 'Cycle_Time', 'Clamp_Close_Time', 'Cushion_Position', 'Plasticizing_Position', 'Clamp_Open_Position', 'Max_Injection_Speed', 'Max_Screw_RPM', 'Average_Screw_RPM', 'Max_Injection_Pressure', 'Max_Switch_Over_Pressure', 'Max_Back_Pressure', 'Average_Back_Pressure', 'Barrel_Temperature_1', 'Barrel_Temperature_2', 'Barrel_Temperature_3', 'Barrel_Temperature_4', 'Barrel_Temperature_5', 'Barrel_Temperature_6', 'Hopper_Temperature', 'Mold_Temperature_3', 'Mold_Temperature_4']
+결측치 총합: 0
+중복 행 수 (모든 컬럼 기준): 0
+중복 행 수 (ID 제외, 공정변수 기준): 6234  (17.3%)
+상수 컬럼: 없음
+거의 상수 컬럼(최빈값 비율 >= 99%): 없음
+                  column   dtype  n_unique  top_value_share       mean        std        min        max
+              Unnamed: 0   int64     35941            0.000 423752.208 225573.788 119515.000 795309.000
+          Injection_Time float64        91            0.285      0.000      1.000     -1.151      2.801
+            Filling_Time float64        97            0.285      0.000      1.000     -1.308      1.663
+       Plasticizing_Time float64       470            0.203      0.000      1.000     -1.534      4.639
+              Cycle_Time float64       371            0.136      0.000      1.000     -4.268      1.745
+        Clamp_Close_Time float64        88            0.131     -0.000      1.000     -1.634      5.977
+        Cushion_Position float64        68            0.136     -0.000      1.000     -1.376      0.762
+   Plasticizing_Position float64       207            0.225      0.000      1.000     -1.938      3.086
+     Clamp_Open_Position float64        53            0.268      0.000      1.000     -0.818      1.916
+     Max_Injection_Speed float64       179            0.058      0.000      1.000     -2.131      0.965
+           Max_Screw_RPM float64        28            0.366     -0.000      1.000     -1.179      2.273
+       Average_Screw_RPM float64        83            0.366      0.000      1.000     -1.297      1.296
+  Max_Injection_Pressure float64       236            0.055      0.000      1.000     -3.555      1.821
+Max_Switch_Over_Pressure float64       303            0.054     -0.000      1.000     -0.563    121.252
+       Max_Back_Pressure float64       233            0.102      0.000      1.000     -1.381      2.555
+   Average_Back_Pressure float64       208            0.366     -0.000      1.000     -1.154      2.961
+    Barrel_Temperature_1 float64        78            0.366     -0.000      1.000     -1.311      0.824
+    Barrel_Temperature_2 float64        93            0.132      0.000      1.000     -2.266      1.017
+    Barrel_Temperature_3 float64        91            0.147     -0.000      1.000     -3.300      0.922
+    Barrel_Temperature_4 float64       144            0.095     -0.000      1.000     -3.089      0.921
+    Barrel_Temperature_5 float64       106            0.093     -0.000      1.000     -3.056      0.892
+    Barrel_Temperature_6 float64        89            0.116      0.000      1.000     -3.302      1.131
+      Hopper_Temperature float64       329            0.015     -0.000      1.000     -2.479      1.330
+      Mold_Temperature_3 float64       156            0.366     -0.000      1.000     -1.277      1.756
+      Mold_Temperature_4 float64       258            0.366      0.000      1.000     -1.225      2.185
+
+------------------------------------------------------------------------------
+[1] 공정변수 스케일 확인 (파일별 평균/표준편차)
+------------------------------------------------------------------------------
+      dataset  n_features  max_abs_mean  n_std_close_to_1  n_std_zero    std_zero_columns
+  labeled_cn7          24  4.630532e-12                23           1 Clamp_Open_Position
+  labeled_rg3          24  2.788886e-12                23           1 Clamp_Open_Position
+unlabeled_cn7          24  9.859161e-15                24           0                    
+unlabeled_rg3          24  7.047502e-15                24           0                    
+-> 모든 파일에서 평균≈0, 표준편차≈1 이면 '파일별로 각각 표준화된 데이터' 이다.
+   (이 경우 CN7/RG3, labeled/unlabeled 사이의 절대적인 크기 비교는 불가능하고,
+    분포의 '모양' 차이만 비교할 수 있다. 원본 단위 데이터는 제공되지 않았다.)
+
+------------------------------------------------------------------------------
+[1] 'Unnamed: 0' 컬럼 분석
+------------------------------------------------------------------------------
+      dataset    min    max     n  n_unique  is_unique  monotonic_increasing  all_consecutive  share_diff_eq_1  max_gap  mean_lag1_autocorr_given_order  mean_lag1_autocorr_shuffled  positive_ids_min  positive_ids_max positives_per_id_quintile  corr_id_vs_target
+  labeled_cn7      0   1210  1211      1211       True                  True             True            1.000        1                           0.790                        0.003              47.0             120.0          [17, 0, 0, 0, 0]             -0.171
+  labeled_rg3   1211   2392  1182      1182       True                  True             True            1.000        1                           0.717                       -0.002            1347.0            2343.0           [4, 9, 3, 4, 5]             -0.014
+unlabeled_cn7 114610 777220 35239     35239       True                  True            False            0.427   181331                           0.823                        0.006               NaN               NaN                       NaN                NaN
+unlabeled_rg3 119515 795309 35941     35941       True                  True            False            0.372   169361                           0.754                        0.003               NaN               NaN                       NaN                NaN
+ID 겹침 labeled_cn7 & labeled_rg3: 0
+ID 겹침 labeled_cn7 & unlabeled_cn7: 0
+ID 겹침 labeled_cn7 & unlabeled_rg3: 0
+ID 겹침 labeled_rg3 & unlabeled_cn7: 0
+ID 겹침 labeled_rg3 & unlabeled_rg3: 0
+ID 겹침 unlabeled_cn7 & unlabeled_rg3: 0
+unlabeled CN7/RG3 를 ID 순으로 합쳤을 때 제품이 바뀌는 구간 수: 32 (1 이면 완전히 분리, 클수록 번갈아 생산)
+
+[해석 가이드]
+ * labeled 는 0부터 연속된 행 번호(CN7 0~1210, RG3 1211~2392)로 '단순 인덱스' 형태이지만,
+   주어진 순서에서 인접 행의 공정변수 자기상관이 매우 높고(섞으면 0 근처),
+   동일한 값의 행이 인접해 나타나므로 '기록(시간) 순서' 를 보존한 인덱스로 보는 것이 합리적이다.
+ * 따라서 feature 로는 쓰지 않고 ID 로만 보존하며, 시간순 holdout 의 기준으로 활용한다.
+ * TODO: 원본 데이터의 TimeStamp 컬럼이 있다면 실제 생산 순서와 대조 필요.
+
+------------------------------------------------------------------------------
+[1] 중복 행 구조 분석 (공정변수 기준)
+------------------------------------------------------------------------------
+      dataset  n_rows  n_unique_feature_rows   group_size_counts  share_size2_groups_adjacent                       label_pattern_(size,n_pos)_counts  n_positive  n_positive_with_identical_negative_twin  bound_recall_at_zero_FP  bound_precision_at_full_recall  bound_f1_at_full_recall
+  labeled_cn7    1211                    606      {1: 1, 2: 605}                     0.942149 {'(1, 0)': 1, '(2, 0)': 591, '(2, 1)': 11, '(2, 2)': 3}        17.0                                     11.0                 0.352941                        0.607143                 0.755556
+  labeled_rg3    1182                    591            {2: 591}                     0.971235                           {'(2, 0)': 566, '(2, 1)': 25}        25.0                                     25.0                 0.000000                        0.500000                 0.666667
+unlabeled_cn7   35239                  28771 {1: 22303, 2: 6468}                     0.999845                                                     NaN         NaN                                      NaN                      NaN                             NaN                      NaN
+unlabeled_rg3   35941                  29707 {1: 23473, 2: 6234}                     0.999840                                                     NaN         NaN                                      NaN                      NaN                             NaN                      NaN
+
+[해석 가이드]
+ * labeled 데이터의 거의 모든 행은 '공정변수가 완전히 같은 인접 2행' 쌍을 이룬다.
+   불량(1) 행의 대부분은 같은 공정값을 가진 정상(0) 행과 쌍을 이루므로,
+   공정변수만으로는 두 행을 구분할 수 없다 → 어떤 모델도 이 쌍에서는 (TP+FP) 또는 (FN+TN) 이 된다.
+ * 가설: 1 shot(1회 사출) 에서 2개 부품(예: LH/RH)이 나오고 부품별로 검사 결과가 붙은 형태.
+   TODO: 원본 데이터의 PART_NAME 등 메타데이터로 확인 필요.
+ * 결론: 무작위 split 은 같은 쌍을 train/validation 에 나눠 넣어 성능을 왜곡할 수 있으므로
+   쌍(group) 단위 split 을 함께 평가한다.
+ * 성능 상한(bound_*): FP 0 으로 잡을 수 있는 최대 Recall, 모든 불량을 잡을 때의 최대 Precision/F1.
+
+------------------------------------------------------------------------------
+[1] target 분포
+------------------------------------------------------------------------------
+[target] CN7: 0 -> 1194 (98.60%), 1 -> 17 (1.40%)  (불균형 비율 약 1:70)
+[target] RG3: 0 -> 1157 (97.88%), 1 -> 25 (2.12%)  (불균형 비율 약 1:46)
+
+==============================================================================
+[2] 데이터 분포 분석
+==============================================================================
+[features] 공정변수 24개 중 상수 컬럼 ['Clamp_Open_Position'] 제외 → 23개 사용
+           (ID 컬럼 'Unnamed: 0' 은 feature 에서 제외하고 ID 로만 보존)
+
+[class-conditional] CN7: 정상 vs 불량 분포 차이가 큰 변수 (KS 통계량 순)
+                 feature  mean_normal  mean_defect  mean_diff_defect_minus_normal  ks_stat  ks_pvalue
+   Plasticizing_Position       -0.021        1.496                          1.518    0.752      0.000
+      Mold_Temperature_4       -0.019        1.367                          1.386    0.715      0.000
+      Mold_Temperature_3       -0.017        1.217                          1.234    0.707      0.000
+       Max_Back_Pressure        0.021       -1.476                         -1.497    0.700      0.000
+       Plasticizing_Time        0.006       -0.429                         -0.435    0.695      0.000
+   Average_Back_Pressure        0.019       -1.341                         -1.360    0.607      0.000
+        Clamp_Close_Time       -0.017        1.200                          1.217    0.544      0.000
+Max_Switch_Over_Pressure       -0.012        0.847                          0.859    0.421      0.003
+      Hopper_Temperature        0.009       -0.667                         -0.676    0.411      0.004
+     Max_Injection_Speed       -0.039        2.730                          2.769    0.353      0.023
+
+[class-conditional] RG3: 정상 vs 불량 분포 차이가 큰 변수 (KS 통계량 순)
+              feature  mean_normal  mean_defect  mean_diff_defect_minus_normal  ks_stat  ks_pvalue
+ Barrel_Temperature_5       -0.010        0.446                          0.455    0.185      0.330
+   Mold_Temperature_4        0.002       -0.080                         -0.082    0.165      0.466
+   Hopper_Temperature        0.003       -0.134                         -0.137    0.148      0.607
+   Mold_Temperature_3        0.002       -0.088                         -0.090    0.143      0.648
+  Max_Injection_Speed        0.001       -0.042                         -0.043    0.131      0.744
+    Plasticizing_Time       -0.004        0.173                          0.177    0.121      0.821
+Average_Back_Pressure       -0.001        0.060                          0.062    0.119      0.836
+ Barrel_Temperature_3        0.003       -0.137                         -0.140    0.116      0.856
+ Barrel_Temperature_6       -0.001        0.044                          0.045    0.110      0.895
+ Barrel_Temperature_4        0.001       -0.046                         -0.047    0.104      0.928
+[correlation] CN7: |r| >= 0.9 인 변수 쌍 3개
+dataset          feature_a             feature_b  corr
+    CN7     Injection_Time          Filling_Time 0.980
+    CN7  Max_Back_Pressure Average_Back_Pressure 0.940
+    CN7 Mold_Temperature_3    Mold_Temperature_4 0.978
+[correlation] RG3: |r| >= 0.9 인 변수 쌍 2개
+dataset          feature_a             feature_b  corr
+    RG3  Max_Back_Pressure Average_Back_Pressure 0.941
+    RG3 Mold_Temperature_3    Mold_Temperature_4 0.974
+
+------------------------------------------------------------------------------
+[2] CN7 vs RG3 분포 비교
+------------------------------------------------------------------------------
+                 feature  CN7_mean  RG3_mean  difference  standardized_mean_diff  CN7_n_unique  RG3_n_unique  ks_stat  ks_pvalue
+              Cycle_Time       0.0       0.0        -0.0                    -0.0            13            10    0.603      0.000
+       Average_Screw_RPM       0.0      -0.0         0.0                     0.0             7             4    0.576      0.000
+          Injection_Time      -0.0      -0.0         0.0                     0.0            15             3    0.515      0.000
+        Clamp_Close_Time      -0.0       0.0        -0.0                    -0.0             3             3    0.405      0.000
+   Plasticizing_Position      -0.0       0.0        -0.0                    -0.0            13             8    0.389      0.000
+            Filling_Time      -0.0      -0.0        -0.0                    -0.0            14             2    0.385      0.000
+        Cushion_Position       0.0       0.0         0.0                     0.0             5             7    0.368      0.000
+     Max_Injection_Speed       0.0      -0.0         0.0                     0.0            20             7    0.365      0.000
+  Max_Injection_Pressure       0.0      -0.0         0.0                     0.0             8            10    0.321      0.000
+           Max_Screw_RPM      -0.0      -0.0         0.0                     0.0             8             4    0.301      0.000
+       Plasticizing_Time       0.0      -0.0         0.0                     0.0            34            27    0.291      0.000
+    Barrel_Temperature_3       0.0       0.0        -0.0                    -0.0            19            17    0.260      0.000
+    Barrel_Temperature_5       0.0      -0.0         0.0                     0.0            22            21    0.198      0.000
+       Max_Back_Pressure      -0.0       0.0        -0.0                    -0.0            25            16    0.183      0.000
+      Mold_Temperature_4      -0.0       0.0        -0.0                    -0.0            41            29    0.180      0.000
+      Hopper_Temperature      -0.0      -0.0         0.0                     0.0            47            52    0.172      0.000
+Max_Switch_Over_Pressure      -0.0      -0.0        -0.0                    -0.0            17            17    0.166      0.000
+      Mold_Temperature_3      -0.0      -0.0        -0.0                    -0.0            39            26    0.163      0.000
+   Average_Back_Pressure      -0.0       0.0        -0.0                    -0.0            15            21    0.147      0.000
+    Barrel_Temperature_6      -0.0      -0.0        -0.0                    -0.0            13            12    0.140      0.000
+    Barrel_Temperature_1      -0.0      -0.0         0.0                     0.0            25            25    0.124      0.000
+    Barrel_Temperature_2      -0.0       0.0        -0.0                    -0.0            24            22    0.123      0.000
+    Barrel_Temperature_4       0.0       0.0        -0.0                    -0.0            36            30    0.051      0.082
+
+[주의] 두 파일이 각각 표준화되어 있어 평균 차이/SMD 는 0 근처가 '만들어져' 있다.
+       분포 '모양' 차이는 KS 통계량(0=같음, 1=완전히 다름)으로 본다.
+
+[도메인 분류기] feature 만으로 CN7/RG3 구분 — RandomForest AUC=1.000, LogisticRegression AUC=0.404
+   AUC 가 1 에 가까우면 트리 모델은 source 컬럼이 없어도 제품을 완벽히 구분할 수 있다.
+   → 실험 B 에서 source 컬럼은 '새 정보' 가 아니라 이미 feature 에 들어 있는 정보의 명시적 표기이다.
+
+------------------------------------------------------------------------------
+[2] labeled vs unlabeled 분포 비교 (같은 제품)
+------------------------------------------------------------------------------
+feature 별 KS 통계량 요약 (labeled vs unlabeled):
+         mean  median    max
+source                      
+CN7     0.370   0.350  0.515
+RG3     0.347   0.312  0.624
+
+[주의] labeled 와 unlabeled 도 각각 따로 표준화되어 있다. 같은 z-score 값이 같은 물리량을 뜻한다는
+       보장이 없으므로 unlabeled 예측은 '상대적 순위(ranking)' 용도로만 해석해야 한다.
+       TODO: 원본 단위 데이터 또는 스케일링 파라미터(평균/표준편차) 확보 필요.
+
+==============================================================================
+[3~10] 실험 A (CN7, RG3 각각) / 실험 B (CN7+RG3 + source)
+==============================================================================
+[source proxy 점검] 제품별 불량률: {'CN7': 0.014, 'RG3': 0.0212} → 차이는 약 0.7%p 로, source 는 약한 사전확률 정보일 뿐 target 을 직접 드러내지 않는다.
+
+[A/CN7] validation=random_holdout: train 968 (pos 14), val 243 (pos 3), val 행 중 train 에 완전히 같은 행이 있는 비율 72.8%
+
+[A/RG3] validation=random_holdout: train 945 (pos 20), val 237 (pos 5), val 행 중 train 에 완전히 같은 행이 있는 비율 84.0%
+
+[B/CN7+RG3] validation=random_holdout: train 1914 (pos 34), val 479 (pos 8), val 행 중 train 에 완전히 같은 행이 있는 비율 80.8%
+
+[A/CN7] validation=group_holdout: train 969 (pos 13), val 242 (pos 4), val 행 중 train 에 완전히 같은 행이 있는 비율 0.0%
+
+[A/RG3] validation=group_holdout: train 946 (pos 20), val 236 (pos 5), val 행 중 train 에 완전히 같은 행이 있는 비율 0.0%
+
+[B/CN7+RG3] validation=group_holdout: train 1913 (pos 34), val 480 (pos 8), val 행 중 train 에 완전히 같은 행이 있는 비율 0.0%
+
+[A/CN7] validation=ordered_holdout: train 969 (pos 17), val 242 (pos 0), val 행 중 train 에 완전히 같은 행이 있는 비율 0.0%
+   !! validation 에 양성(불량)이 하나도 없어 Recall/F1/AUC 를 해석할 수 없다. (표에는 남기되 참고용)
+
+[A/RG3] validation=ordered_holdout: train 946 (pos 20), val 236 (pos 5), val 행 중 train 에 완전히 같은 행이 있는 비율 0.0%
+
+[B/CN7+RG3] validation=ordered_holdout: train 1915 (pos 37), val 478 (pos 5), val 행 중 train 에 완전히 같은 행이 있는 비율 0.0%
+
+==============================================================================
+[보조] group-aware 5-fold CV (모든 행의 OOF 확률)
+==============================================================================
+
+------------------------------------------------------------------------------
+[12] 결과 비교표 — random_holdout (F1 내림차순)
+------------------------------------------------------------------------------
+experiment      dataset                model       class_weight  accuracy  precision  recall    f1  roc_auc  pr_auc  tn  fp  fn  tp  n_pos_val
+         B CN7+RG3[CN7]   LogisticRegression           balanced     0.941      0.143   0.500 0.222    0.959   0.308 223  12   2   2          4
+         A          CN7   LogisticRegression           balanced     0.963      0.125   0.333 0.182    0.935   0.160 233   7   2   1          3
+         B      CN7+RG3   LogisticRegression           balanced     0.747      0.041   0.625 0.076    0.783   0.065 353 118   3   5          8
+         B CN7+RG3[RG3]   LogisticRegression           balanced     0.554      0.028   0.750 0.053    0.613   0.042 130 106   1   3          4
+         A          RG3   LogisticRegression           balanced     0.688      0.027   0.400 0.051    0.529   0.047 161  71   3   2          5
+         B CN7+RG3[CN7]   LogisticRegression               None     0.983      0.000   0.000 0.000    0.969   0.370 235   0   4   0          4
+         A          CN7   LogisticRegression               None     0.988      0.000   0.000 0.000    0.965   0.229 240   0   3   0          3
+         B CN7+RG3[CN7] HistGradientBoosting           balanced     0.975      0.000   0.000 0.000    0.954   0.182 233   2   4   0          4
+         B CN7+RG3[CN7]         RandomForest               None     0.975      0.000   0.000 0.000    0.939   0.156 233   2   4   0          4
+         A          CN7 HistGradientBoosting               None     0.984      0.000   0.000 0.000    0.947   0.152 239   1   3   0          3
+         A          CN7 HistGradientBoosting           balanced     0.984      0.000   0.000 0.000    0.951   0.150 239   1   3   0          3
+         B CN7+RG3[CN7]         RandomForest balanced_subsample     0.975      0.000   0.000 0.000    0.924   0.131 233   2   4   0          4
+         B      CN7+RG3   LogisticRegression               None     0.983      0.000   0.000 0.000    0.800   0.106 471   0   8   0          8
+         A          CN7         RandomForest balanced_subsample     0.984      0.000   0.000 0.000    0.903   0.088 239   1   3   0          3
+         A          CN7         RandomForest               None     0.984      0.000   0.000 0.000    0.876   0.074 239   1   3   0          3
+         B CN7+RG3[CN7] HistGradientBoosting               None     0.975      0.000   0.000 0.000    0.864   0.069 233   2   4   0          4
+         B      CN7+RG3         RandomForest balanced_subsample     0.962      0.000   0.000 0.000    0.784   0.055 461  10   8   0          8
+         B CN7+RG3[RG3]         RandomForest balanced_subsample     0.950      0.000   0.000 0.000    0.673   0.052 228   8   4   0          4
+         A          RG3   LogisticRegression               None     0.979      0.000   0.000 0.000    0.423   0.051 232   0   5   0          5
+         B      CN7+RG3         RandomForest               None     0.962      0.000   0.000 0.000    0.770   0.050 461  10   8   0          8
+         B      CN7+RG3 HistGradientBoosting           balanced     0.962      0.000   0.000 0.000    0.811   0.049 461  10   8   0          8
+         B CN7+RG3[RG3]         RandomForest               None     0.950      0.000   0.000 0.000    0.624   0.036 228   8   4   0          4
+         A          RG3 HistGradientBoosting               None     0.954      0.000   0.000 0.000    0.634   0.034 226   6   5   0          5
+         B CN7+RG3[RG3]   LogisticRegression               None     0.983      0.000   0.000 0.000    0.553   0.033 236   0   4   0          4
+         B CN7+RG3[RG3] HistGradientBoosting           balanced     0.950      0.000   0.000 0.000    0.645   0.031 228   8   4   0          4
+         B      CN7+RG3 HistGradientBoosting               None     0.962      0.000   0.000 0.000    0.705   0.031 461  10   8   0          8
+         B CN7+RG3[RG3] HistGradientBoosting               None     0.950      0.000   0.000 0.000    0.592   0.029 228   8   4   0          4
+         A          RG3         RandomForest               None     0.954      0.000   0.000 0.000    0.413   0.028 226   6   5   0          5
+         A          RG3 HistGradientBoosting           balanced     0.954      0.000   0.000 0.000    0.565   0.027 226   6   5   0          5
+         A          RG3                Dummy      most_frequent     0.979      0.000   0.000 0.000    0.500   0.021 232   0   5   0          5
+         A          RG3                Dummy         stratified     0.970      0.000   0.000 0.000    0.496   0.021 230   2   5   0          5
+         A          RG3         RandomForest balanced_subsample     0.954      0.000   0.000 0.000    0.333   0.018 226   6   5   0          5
+         B CN7+RG3[CN7]                Dummy      most_frequent     0.983      0.000   0.000 0.000    0.500   0.017 235   0   4   0          4
+         B CN7+RG3[CN7]                Dummy         stratified     0.975      0.000   0.000 0.000    0.496   0.017 233   2   4   0          4
+         B      CN7+RG3                Dummy      most_frequent     0.983      0.000   0.000 0.000    0.500   0.017 471   0   8   0          8
+         B      CN7+RG3                Dummy         stratified     0.969      0.000   0.000 0.000    0.493   0.017 464   7   8   0          8
+         B CN7+RG3[RG3]                Dummy      most_frequent     0.983      0.000   0.000 0.000    0.500   0.017 236   0   4   0          4
+         B CN7+RG3[RG3]                Dummy         stratified     0.962      0.000   0.000 0.000    0.489   0.017 231   5   4   0          4
+         A          CN7                Dummy      most_frequent     0.988      0.000   0.000 0.000    0.500   0.012 240   0   3   0          3
+         A          CN7                Dummy         stratified     0.979      0.000   0.000 0.000    0.496   0.012 238   2   3   0          3
+
+------------------------------------------------------------------------------
+[12] 결과 비교표 — group_holdout (중복 쌍 분리)
+------------------------------------------------------------------------------
+experiment      dataset                model       class_weight  accuracy  precision  recall    f1  roc_auc  pr_auc  tn  fp  fn  tp  n_pos_val
+         A          CN7         RandomForest               None     0.992      1.000   0.500 0.667    0.964   0.585 238   0   2   2          4
+         A          CN7   LogisticRegression               None     0.992      1.000   0.500 0.667    0.954   0.580 238   0   2   2          4
+         A          CN7 HistGradientBoosting               None     0.983      0.500   0.500 0.500    0.985   0.665 236   2   2   2          4
+         A          CN7 HistGradientBoosting           balanced     0.975      0.333   0.500 0.400    0.977   0.616 234   4   2   2          4
+         A          CN7   LogisticRegression           balanced     0.942      0.143   0.500 0.222    0.914   0.556 226  12   2   2          4
+         B CN7+RG3[RG3]   LogisticRegression           balanced     0.592      0.031   0.375 0.058    0.418   0.030 139  93   5   3          8
+         A          RG3   LogisticRegression           balanced     0.665      0.026   0.400 0.048    0.478   0.027 155  76   3   2          5
+         B      CN7+RG3   LogisticRegression           balanced     0.742      0.025   0.375 0.046    0.645   0.025 353 119   5   3          8
+         A          CN7         RandomForest balanced_subsample     0.975      0.000   0.000 0.000    0.956   0.326 236   2   4   0          4
+         A          RG3 HistGradientBoosting               None     0.979      0.000   0.000 0.000    0.672   0.102 231   0   5   0          5
+         B CN7+RG3[RG3]         RandomForest balanced_subsample     0.967      0.000   0.000 0.000    0.534   0.096 232   0   8   0          8
+         A          RG3 HistGradientBoosting           balanced     0.970      0.000   0.000 0.000    0.646   0.067 229   2   5   0          5
+         B CN7+RG3[RG3] HistGradientBoosting               None     0.967      0.000   0.000 0.000    0.575   0.052 232   0   8   0          8
+         A          RG3         RandomForest balanced_subsample     0.979      0.000   0.000 0.000    0.709   0.040 231   0   5   0          5
+         B CN7+RG3[RG3]   LogisticRegression               None     0.967      0.000   0.000 0.000    0.532   0.039 232   0   8   0          8
+         B      CN7+RG3         RandomForest balanced_subsample     0.983      0.000   0.000 0.000    0.695   0.036 472   0   8   0          8
+         B CN7+RG3[RG3] HistGradientBoosting           balanced     0.967      0.000   0.000 0.000    0.442   0.036 232   0   8   0          8
+         B      CN7+RG3 HistGradientBoosting               None     0.983      0.000   0.000 0.000    0.697   0.035 472   0   8   0          8
+         B CN7+RG3[RG3]                Dummy      most_frequent     0.967      0.000   0.000 0.000    0.500   0.033 232   0   8   0          8
+         B CN7+RG3[RG3]                Dummy         stratified     0.946      0.000   0.000 0.000    0.489   0.033 227   5   8   0          8
+         A          RG3   LogisticRegression               None     0.979      0.000   0.000 0.000    0.515   0.031 231   0   5   0          5
+         B CN7+RG3[RG3]         RandomForest               None     0.967      0.000   0.000 0.000    0.376   0.031 232   0   8   0          8
+         B      CN7+RG3   LogisticRegression               None     0.983      0.000   0.000 0.000    0.697   0.029 472   0   8   0          8
+         A          RG3         RandomForest               None     0.979      0.000   0.000 0.000    0.456   0.026 231   0   5   0          5
+         B      CN7+RG3 HistGradientBoosting           balanced     0.979      0.000   0.000 0.000    0.522   0.022 470   2   8   0          8
+         A          RG3                Dummy      most_frequent     0.979      0.000   0.000 0.000    0.500   0.021 231   0   5   0          5
+         A          RG3                Dummy         stratified     0.970      0.000   0.000 0.000    0.496   0.021 229   2   5   0          5
+         B      CN7+RG3         RandomForest               None     0.979      0.000   0.000 0.000    0.525   0.019 470   2   8   0          8
+         B      CN7+RG3                Dummy      most_frequent     0.983      0.000   0.000 0.000    0.500   0.017 472   0   8   0          8
+         B      CN7+RG3                Dummy         stratified     0.969      0.000   0.000 0.000    0.493   0.017 465   7   8   0          8
+         A          CN7                Dummy      most_frequent     0.983      0.000   0.000 0.000    0.500   0.017 238   0   4   0          4
+         A          CN7                Dummy         stratified     0.979      0.000   0.000 0.000    0.498   0.017 237   1   4   0          4
+         B CN7+RG3[CN7]                Dummy      most_frequent     1.000      0.000   0.000 0.000      NaN     NaN 240   0   0   0          0
+         B CN7+RG3[CN7]                Dummy         stratified     0.992      0.000   0.000 0.000      NaN     NaN 238   2   0   0          0
+         B CN7+RG3[CN7]   LogisticRegression               None     1.000      0.000   0.000 0.000      NaN     NaN 240   0   0   0          0
+         B CN7+RG3[CN7]   LogisticRegression           balanced     0.892      0.000   0.000 0.000      NaN     NaN 214  26   0   0          0
+         B CN7+RG3[CN7]         RandomForest               None     0.992      0.000   0.000 0.000      NaN     NaN 238   2   0   0          0
+         B CN7+RG3[CN7]         RandomForest balanced_subsample     1.000      0.000   0.000 0.000      NaN     NaN 240   0   0   0          0
+         B CN7+RG3[CN7] HistGradientBoosting               None     1.000      0.000   0.000 0.000      NaN     NaN 240   0   0   0          0
+         B CN7+RG3[CN7] HistGradientBoosting           balanced     0.992      0.000   0.000 0.000      NaN     NaN 238   2   0   0          0
+
+------------------------------------------------------------------------------
+[12] 결과 비교표 — ordered_holdout (기록 순서 뒤 20%)
+------------------------------------------------------------------------------
+experiment      dataset                model       class_weight  accuracy  precision  recall    f1  roc_auc  pr_auc  tn  fp  fn  tp  n_pos_val
+         A          RG3   LogisticRegression           balanced     0.886      0.077     0.4 0.129    0.645   0.053 207  24   3   2          5
+         B CN7+RG3[RG3]   LogisticRegression           balanced     0.801      0.043     0.4 0.078    0.584   0.046 187  44   3   2          5
+         B      CN7+RG3   LogisticRegression           balanced     0.902      0.043     0.4 0.078    0.793   0.046 429  44   3   2          5
+         A          RG3 HistGradientBoosting           balanced     0.979      0.000     0.0 0.000    0.561   0.075 231   0   5   0          5
+         A          RG3   LogisticRegression               None     0.979      0.000     0.0 0.000    0.665   0.065 231   0   5   0          5
+         B CN7+RG3[RG3]         RandomForest               None     0.979      0.000     0.0 0.000    0.536   0.051 231   0   5   0          5
+         B CN7+RG3[RG3]   LogisticRegression               None     0.979      0.000     0.0 0.000    0.601   0.042 231   0   5   0          5
+         B      CN7+RG3   LogisticRegression               None     0.990      0.000     0.0 0.000    0.791   0.041 473   0   5   0          5
+         B      CN7+RG3         RandomForest               None     0.981      0.000     0.0 0.000    0.666   0.040 469   4   5   0          5
+         B CN7+RG3[RG3] HistGradientBoosting           balanced     0.979      0.000     0.0 0.000    0.624   0.035 231   0   5   0          5
+         A          RG3         RandomForest               None     0.979      0.000     0.0 0.000    0.439   0.034 231   0   5   0          5
+         A          RG3         RandomForest balanced_subsample     0.979      0.000     0.0 0.000    0.482   0.032 231   0   5   0          5
+         B CN7+RG3[RG3] HistGradientBoosting               None     0.979      0.000     0.0 0.000    0.532   0.029 231   0   5   0          5
+         A          RG3 HistGradientBoosting               None     0.979      0.000     0.0 0.000    0.465   0.024 231   0   5   0          5
+         B      CN7+RG3 HistGradientBoosting           balanced     0.990      0.000     0.0 0.000    0.715   0.021 473   0   5   0          5
+         A          RG3                Dummy      most_frequent     0.979      0.000     0.0 0.000    0.500   0.021 231   0   5   0          5
+         A          RG3                Dummy         stratified     0.970      0.000     0.0 0.000    0.496   0.021 229   2   5   0          5
+         B CN7+RG3[RG3]                Dummy      most_frequent     0.979      0.000     0.0 0.000    0.500   0.021 231   0   5   0          5
+         B CN7+RG3[RG3]                Dummy         stratified     0.958      0.000     0.0 0.000    0.489   0.021 226   5   5   0          5
+         B CN7+RG3[RG3]         RandomForest balanced_subsample     0.979      0.000     0.0 0.000    0.378   0.020 231   0   5   0          5
+         B      CN7+RG3 HistGradientBoosting               None     0.990      0.000     0.0 0.000    0.660   0.020 473   0   5   0          5
+         B      CN7+RG3         RandomForest balanced_subsample     0.990      0.000     0.0 0.000    0.584   0.016 473   0   5   0          5
+         B      CN7+RG3                Dummy      most_frequent     0.990      0.000     0.0 0.000    0.500   0.010 473   0   5   0          5
+         B      CN7+RG3                Dummy         stratified     0.975      0.000     0.0 0.000    0.493   0.010 466   7   5   0          5
+         A          CN7                Dummy      most_frequent     1.000      0.000     0.0 0.000      NaN     NaN 242   0   0   0          0
+         A          CN7                Dummy         stratified     0.992      0.000     0.0 0.000      NaN     NaN 240   2   0   0          0
+         A          CN7   LogisticRegression               None     0.975      0.000     0.0 0.000      NaN     NaN 236   6   0   0          0
+         A          CN7   LogisticRegression           balanced     0.860      0.000     0.0 0.000      NaN     NaN 208  34   0   0          0
+         A          CN7         RandomForest               None     0.983      0.000     0.0 0.000      NaN     NaN 238   4   0   0          0
+         A          CN7         RandomForest balanced_subsample     1.000      0.000     0.0 0.000      NaN     NaN 242   0   0   0          0
+         A          CN7 HistGradientBoosting               None     1.000      0.000     0.0 0.000      NaN     NaN 242   0   0   0          0
+         A          CN7 HistGradientBoosting           balanced     1.000      0.000     0.0 0.000      NaN     NaN 242   0   0   0          0
+         B CN7+RG3[CN7]                Dummy      most_frequent     1.000      0.000     0.0 0.000      NaN     NaN 242   0   0   0          0
+         B CN7+RG3[CN7]                Dummy         stratified     0.992      0.000     0.0 0.000      NaN     NaN 240   2   0   0          0
+         B CN7+RG3[CN7]   LogisticRegression               None     1.000      0.000     0.0 0.000      NaN     NaN 242   0   0   0          0
+         B CN7+RG3[CN7]   LogisticRegression           balanced     1.000      0.000     0.0 0.000      NaN     NaN 242   0   0   0          0
+         B CN7+RG3[CN7]         RandomForest               None     0.983      0.000     0.0 0.000      NaN     NaN 238   4   0   0          0
+         B CN7+RG3[CN7]         RandomForest balanced_subsample     1.000      0.000     0.0 0.000      NaN     NaN 242   0   0   0          0
+         B CN7+RG3[CN7] HistGradientBoosting               None     1.000      0.000     0.0 0.000      NaN     NaN 242   0   0   0          0
+         B CN7+RG3[CN7] HistGradientBoosting           balanced     1.000      0.000     0.0 0.000      NaN     NaN 242   0   0   0          0
+
+------------------------------------------------------------------------------
+[12] 결과 비교표 — cv_group5fold (OOF)
+------------------------------------------------------------------------------
+experiment      dataset                model       class_weight  accuracy  precision  recall    f1  roc_auc  pr_auc   tn  fp  fn  tp  n_pos_val
+         B CN7+RG3[CN7]   LogisticRegression               None     0.991      1.000   0.353 0.522    0.935   0.472 1194   0  11   6         17
+         A          CN7         RandomForest               None     0.991      1.000   0.353 0.522    0.938   0.423 1194   0  11   6         17
+         A          CN7   LogisticRegression               None     0.989      0.750   0.353 0.480    0.937   0.476 1192   2  11   6         17
+         B CN7+RG3[CN7] HistGradientBoosting           balanced     0.989      0.750   0.353 0.480    0.919   0.461 1192   2  11   6         17
+         B CN7+RG3[CN7]         RandomForest               None     0.989      0.750   0.353 0.480    0.938   0.420 1192   2  11   6         17
+         A          CN7 HistGradientBoosting           balanced     0.984      0.429   0.353 0.387    0.945   0.385 1186   8  11   6         17
+         B CN7+RG3[CN7] HistGradientBoosting               None     0.989      1.000   0.235 0.381    0.924   0.425 1194   0  13   4         17
+         A          CN7 HistGradientBoosting               None     0.988      0.667   0.235 0.348    0.962   0.459 1192   2  13   4         17
+         B      CN7+RG3   LogisticRegression               None     0.985      1.000   0.143 0.250    0.743   0.203 2351   0  36   6         42
+         B      CN7+RG3         RandomForest               None     0.984      0.750   0.143 0.240    0.707   0.180 2349   2  36   6         42
+         A          CN7   LogisticRegression           balanced     0.950      0.145   0.529 0.228    0.932   0.441 1141  53   8   9         17
+         B      CN7+RG3 HistGradientBoosting           balanced     0.982      0.500   0.143 0.222    0.696   0.179 2345   6  36   6         42
+         B CN7+RG3[CN7]         RandomForest balanced_subsample     0.988      1.000   0.118 0.211    0.947   0.362 1194   0  15   2         17
+         B CN7+RG3[CN7]   LogisticRegression           balanced     0.899      0.111   0.882 0.197    0.940   0.270 1074 120   2  15         17
+         A          CN7         RandomForest balanced_subsample     0.986      0.500   0.118 0.190    0.951   0.333 1192   2  15   2         17
+         B      CN7+RG3 HistGradientBoosting               None     0.984      1.000   0.095 0.174    0.734   0.172 2351   0  38   4         42
+         B      CN7+RG3         RandomForest balanced_subsample     0.983      1.000   0.048 0.091    0.764   0.155 2351   0  40   2         42
+         B      CN7+RG3   LogisticRegression           balanced     0.725      0.040   0.643 0.076    0.742   0.101 1709 642  15  27         42
+         B CN7+RG3[RG3]   LogisticRegression           balanced     0.547      0.022   0.480 0.043    0.457   0.020  635 522  13  12         25
+         A          RG3   LogisticRegression           balanced     0.649      0.020   0.320 0.037    0.452   0.019  759 398  17   8         25
+         B CN7+RG3[RG3]   LogisticRegression               None     0.979      0.000   0.000 0.000    0.475   0.025 1157   0  25   0         25
+         B CN7+RG3[RG3]         RandomForest               None     0.979      0.000   0.000 0.000    0.419   0.023 1157   0  25   0         25
+         B CN7+RG3[RG3]         RandomForest balanced_subsample     0.979      0.000   0.000 0.000    0.499   0.023 1157   0  25   0         25
+         A          RG3 HistGradientBoosting           balanced     0.974      0.000   0.000 0.000    0.484   0.023 1151   6  25   0         25
+         A          RG3 HistGradientBoosting               None     0.979      0.000   0.000 0.000    0.507   0.022 1157   0  25   0         25
+         B CN7+RG3[RG3] HistGradientBoosting               None     0.979      0.000   0.000 0.000    0.502   0.022 1157   0  25   0         25
+         B CN7+RG3[RG3] HistGradientBoosting           balanced     0.975      0.000   0.000 0.000    0.481   0.022 1153   4  25   0         25
+         A          RG3                Dummy      most_frequent     0.979      0.000   0.000 0.000    0.500   0.021 1157   0  25   0         25
+         A          RG3                Dummy         stratified     0.970      0.000   0.000 0.000    0.496   0.021 1147  10  25   0         25
+         B CN7+RG3[RG3]                Dummy      most_frequent     0.979      0.000   0.000 0.000    0.500   0.021 1157   0  25   0         25
+         B CN7+RG3[RG3]                Dummy         stratified     0.958      0.000   0.000 0.000    0.489   0.021 1132  25  25   0         25
+         A          RG3         RandomForest balanced_subsample     0.979      0.000   0.000 0.000    0.483   0.020 1157   0  25   0         25
+         A          RG3   LogisticRegression               None     0.979      0.000   0.000 0.000    0.470   0.020 1157   0  25   0         25
+         B      CN7+RG3                Dummy      most_frequent     0.982      0.000   0.000 0.000    0.500   0.018 2351   0  42   0         42
+         B      CN7+RG3                Dummy         stratified     0.968      0.000   0.000 0.000    0.493   0.018 2316  35  42   0         42
+         A          RG3         RandomForest               None     0.979      0.000   0.000 0.000    0.394   0.017 1157   0  25   0         25
+         A          CN7                Dummy      most_frequent     0.986      0.000   0.000 0.000    0.500   0.014 1194   0  17   0         17
+         A          CN7                Dummy         stratified     0.979      0.000   0.000 0.000    0.497   0.014 1186   8  17   0         17
+         B CN7+RG3[CN7]                Dummy      most_frequent     0.986      0.000   0.000 0.000    0.500   0.014 1194   0  17   0         17
+         B CN7+RG3[CN7]                Dummy         stratified     0.978      0.000   0.000 0.000    0.496   0.014 1184  10  17   0         17
+
+==============================================================================
+[11] 최종 baseline 모델 재학습 및 unlabeled 예측
+==============================================================================
+
+------------------------------------------------------------------------------
+[최종 baseline 선정] CN7
+------------------------------------------------------------------------------
+experiment      dataset                model       class_weight  pr_auc  roc_auc    f1  precision  recall  fn  fp
+         A          CN7   LogisticRegression               None   0.476    0.937 0.480      0.750   0.353  11   2
+         B CN7+RG3[CN7]   LogisticRegression               None   0.472    0.935 0.522      1.000   0.353  11   0
+         B CN7+RG3[CN7] HistGradientBoosting           balanced   0.461    0.919 0.480      0.750   0.353  11   2
+         A          CN7 HistGradientBoosting               None   0.459    0.962 0.348      0.667   0.235  13   2
+         A          CN7   LogisticRegression           balanced   0.441    0.932 0.228      0.145   0.529   8  53
+         B CN7+RG3[CN7] HistGradientBoosting               None   0.425    0.924 0.381      1.000   0.235  13   0
+         A          CN7         RandomForest               None   0.423    0.938 0.522      1.000   0.353  11   0
+         B CN7+RG3[CN7]         RandomForest               None   0.420    0.938 0.480      0.750   0.353  11   2
+         A          CN7 HistGradientBoosting           balanced   0.385    0.945 0.387      0.429   0.353  11   8
+         B CN7+RG3[CN7]         RandomForest balanced_subsample   0.362    0.947 0.211      1.000   0.118  15   0
+         A          CN7         RandomForest balanced_subsample   0.333    0.951 0.190      0.500   0.118  15   2
+         B CN7+RG3[CN7]   LogisticRegression           balanced   0.270    0.940 0.197      0.111   0.882   2 120
+   실험 B 최고 PR-AUC 0.472 vs 실험 A 선택 0.476 → 병합 이득이 분명하지 않아 실험 A 유지
+→ 선택: 실험 A / LogisticRegression / class_weight=None (PR-AUC 0.476, ROC-AUC 0.937, F1 0.480, Recall 0.353, FN 11, FP 2)  — 실험 A(제품별 단독 학습) 후보 중 PR-AUC 최상위군에서 F1/Recall/단순성 우선
+
+------------------------------------------------------------------------------
+[최종 baseline 선정] RG3
+------------------------------------------------------------------------------
+experiment      dataset                model       class_weight  pr_auc  roc_auc    f1  precision  recall  fn  fp
+         B CN7+RG3[RG3]   LogisticRegression               None   0.025    0.475 0.000      0.000    0.00  25   0
+         B CN7+RG3[RG3]         RandomForest               None   0.023    0.419 0.000      0.000    0.00  25   0
+         B CN7+RG3[RG3]         RandomForest balanced_subsample   0.023    0.499 0.000      0.000    0.00  25   0
+         A          RG3 HistGradientBoosting           balanced   0.023    0.484 0.000      0.000    0.00  25   6
+         A          RG3 HistGradientBoosting               None   0.022    0.507 0.000      0.000    0.00  25   0
+         B CN7+RG3[RG3] HistGradientBoosting               None   0.022    0.502 0.000      0.000    0.00  25   0
+         B CN7+RG3[RG3] HistGradientBoosting           balanced   0.022    0.481 0.000      0.000    0.00  25   4
+         B CN7+RG3[RG3]   LogisticRegression           balanced   0.020    0.457 0.043      0.022    0.48  13 522
+         A          RG3         RandomForest balanced_subsample   0.020    0.483 0.000      0.000    0.00  25   0
+         A          RG3   LogisticRegression               None   0.020    0.470 0.000      0.000    0.00  25   0
+         A          RG3   LogisticRegression           balanced   0.019    0.452 0.037      0.020    0.32  17 398
+         A          RG3         RandomForest               None   0.017    0.394 0.000      0.000    0.00  25   0
+   실험 B 최고 PR-AUC 0.020 vs 실험 A 선택 0.019 → 병합 이득이 분명하지 않아 실험 A 유지
+→ 선택: 실험 A / LogisticRegression / class_weight=None (PR-AUC 0.020, ROC-AUC 0.470, F1 0.000, Recall 0.000, FN 25, FP 0)  — 신호 없음(모든 모델이 Dummy 수준) → 가장 단순한 비가중 모델을 자리표시자로 선택
+   !! RG3: 모든 모델이 Dummy 수준(최고 PR-AUC 0.025 vs 불량률 0.021, 최고 ROC-AUC 0.507).
+      현재 공정변수만으로는 불량을 구분할 신호가 확인되지 않는다. 예측 파일은 형식상 생성하며 해석에 주의.
+[unlabeled] CN7: 35239행, 예측 불량률(0.5 기준) 4.78% (labeled 불량률 1.40%), 평균 확률 0.157, 학습 범위 밖 값을 하나라도 가진 행 61.5%
+   !! 예측 불량률이 labeled 불량률의 2배를 넘는다 → labeled/unlabeled 가 따로 표준화된 영향(스케일 불일치)
+      또는 실제 분포 변화 가능성. 원본 단위 확인 전까지는 확률의 절대값보다 순위(inspection_rank)만 참고.
+[unlabeled] RG3: 35941행, 예측 불량률(0.5 기준) 0.01% (labeled 불량률 2.12%), 평균 확률 0.021, 학습 범위 밖 값을 하나라도 가진 행 51.2%
+
+==============================================================================
+[15] 최종 요약
+==============================================================================
+1. 데이터 구조
+   - labeled_cn7: (1211, 26)
+   - labeled_rg3: (1182, 26)
+   - unlabeled_cn7: (35239, 25)
+   - unlabeled_rg3: (35941, 25)
+   - 사용 feature 23개 (상수 컬럼 ['Clamp_Open_Position'] 제외), ID='Unnamed: 0', target='PassOrFail'
+   - 모든 파일이 각각 표준화(z-score)되어 있으며, labeled 는 '동일 공정값 인접 2행' 쌍 구조(약 50% 중복)
+2. 정상/불량 비율 (1 = 불량 가정)
+   - CN7: 정상 1194 / 불량 17 (1.40%)
+   - RG3: 정상 1157 / 불량 25 (2.12%)
+3. CN7/RG3 분포 차이
+   - 평균 차이는 표준화 때문에 0 (비교 불가). KS 통계량 평균 0.279, 최대 0.603 (Cycle_Time) → 분포 모양이 뚜렷이 다름
+   - 도메인 분류기 AUC: RF 1.000 / LR 0.404
+4. 각 모델 성능: outputs/model_comparison.csv (random holdout), outputs/model_comparison_all_validations.csv, outputs/cv_group5fold_comparison.csv 참고
+   [CN7, cv_group5fold]
+experiment                model       class_weight    f1  precision  recall  pr_auc  roc_auc  fn  fp
+         A   LogisticRegression               None 0.480      0.750   0.353   0.476    0.937  11   2
+         B   LogisticRegression               None 0.522      1.000   0.353   0.472    0.935  11   0
+         B HistGradientBoosting           balanced 0.480      0.750   0.353   0.461    0.919  11   2
+         A HistGradientBoosting               None 0.348      0.667   0.235   0.459    0.962  13   2
+         A   LogisticRegression           balanced 0.228      0.145   0.529   0.441    0.932   8  53
+         B HistGradientBoosting               None 0.381      1.000   0.235   0.425    0.924  13   0
+         A         RandomForest               None 0.522      1.000   0.353   0.423    0.938  11   0
+         B         RandomForest               None 0.480      0.750   0.353   0.420    0.938  11   2
+         A HistGradientBoosting           balanced 0.387      0.429   0.353   0.385    0.945  11   8
+         B         RandomForest balanced_subsample 0.211      1.000   0.118   0.362    0.947  15   0
+         A         RandomForest balanced_subsample 0.190      0.500   0.118   0.333    0.951  15   2
+         B   LogisticRegression           balanced 0.197      0.111   0.882   0.270    0.940   2 120
+         A                Dummy         stratified 0.000      0.000   0.000   0.014    0.497  17   8
+         A                Dummy      most_frequent 0.000      0.000   0.000   0.014    0.500  17   0
+         B                Dummy      most_frequent 0.000      0.000   0.000   0.014    0.500  17   0
+         B                Dummy         stratified 0.000      0.000   0.000   0.014    0.496  17  10
+   [RG3, cv_group5fold]
+experiment                model       class_weight    f1  precision  recall  pr_auc  roc_auc  fn  fp
+         B   LogisticRegression               None 0.000      0.000    0.00   0.025    0.475  25   0
+         B         RandomForest               None 0.000      0.000    0.00   0.023    0.419  25   0
+         B         RandomForest balanced_subsample 0.000      0.000    0.00   0.023    0.499  25   0
+         A HistGradientBoosting           balanced 0.000      0.000    0.00   0.023    0.484  25   6
+         A HistGradientBoosting               None 0.000      0.000    0.00   0.022    0.507  25   0
+         B HistGradientBoosting               None 0.000      0.000    0.00   0.022    0.502  25   0
+         B HistGradientBoosting           balanced 0.000      0.000    0.00   0.022    0.481  25   4
+         A                Dummy      most_frequent 0.000      0.000    0.00   0.021    0.500  25   0
+         A                Dummy         stratified 0.000      0.000    0.00   0.021    0.496  25  10
+         B                Dummy      most_frequent 0.000      0.000    0.00   0.021    0.500  25   0
+         B                Dummy         stratified 0.000      0.000    0.00   0.021    0.489  25  25
+         B   LogisticRegression           balanced 0.043      0.022    0.48   0.020    0.457  13 522
+         A         RandomForest balanced_subsample 0.000      0.000    0.00   0.020    0.483  25   0
+         A   LogisticRegression               None 0.000      0.000    0.00   0.020    0.470  25   0
+         A   LogisticRegression           balanced 0.037      0.020    0.32   0.019    0.452  17 398
+         A         RandomForest               None 0.000      0.000    0.00   0.017    0.394  25   0
+5~6. best baseline model 과 선정 이유
+   - CN7: 실험 A / LogisticRegression / class_weight=None  — 실험 A(제품별 단독 학습) 후보 중 PR-AUC 최상위군에서 F1/Recall/단순성 우선 (근거 데이터: cv_group5fold)
+   - RG3: 실험 A / LogisticRegression / class_weight=None  — 신호 없음(모든 모델이 Dummy 수준) → 가장 단순한 비가중 모델을 자리표시자로 선택 (근거 데이터: cv_group5fold)
+     !! RG3 는 모든 모델이 Dummy 수준: 현재 feature 로는 불량 신호가 확인되지 않음
+7~8. FN / FP 개수 (선정 모델, threshold 0.5)
+   - CN7 [random_holdout]: FN=3 FP=0 TP=0 TN=240 (양성 3개 중)
+   - CN7 [cv_group5fold]: FN=11 FP=2 TP=6 TN=1192 (양성 17개 중)
+   - RG3 [random_holdout]: FN=5 FP=0 TP=0 TN=232 (양성 5개 중)
+   - RG3 [cv_group5fold]: FN=25 FP=0 TP=0 TN=1157 (양성 25개 중)
+9. threshold 변화에 따른 trade-off (선정 모델, OOF)
+   [CN7]
+ threshold  precision  recall    f1  fn  fp  n_flagged
+       0.1      0.267   0.471 0.340   9  22         30
+       0.3      0.750   0.353 0.480  11   2          8
+       0.5      0.750   0.353 0.480  11   2          8
+       0.7      1.000   0.353 0.522  11   0          6
+       0.9      1.000   0.353 0.522  11   0          6
+   [RG3]
+ threshold  precision  recall  f1  fn  fp  n_flagged
+       0.1        0.0     0.0 0.0  25  18         18
+       0.3        0.0     0.0 0.0  25   0          0
+       0.5        0.0     0.0 0.0  25   0          0
+       0.7        0.0     0.0 0.0  25   0          0
+       0.9        0.0     0.0 0.0  25   0          0
+10. 다음 단계에서 개선할 부분
+   - shot(중복 쌍) 단위로 라벨을 집계(any-defect)한 문제 정의 검토 — 현재 행 단위 라벨은 동일 feature 에 상반된 라벨이 붙어 성능 상한이 있음
+   - 원본 단위 데이터/스케일링 파라미터 확보 → labeled/unlabeled 스케일 불일치 해소 (없으면 unlabeled 는 순위 용도로만)
+   - PassOrFail 0/1 의미 공식 확인 (현재 1=불량 가정)
+   - FN/FP 오류 파일(outputs/errors/*_oof_errors.csv)로 불량이 집중되는 공정조건 분석 + SHAP
+   - threshold 는 별도 검증(예: nested CV)으로 결정 — Recall 우선 운영점(검사 여력 대비) 설계
+   - CN7 은 불량이 한 시기(ID 47~120)에 몰려 있어 시간순 검증이 불가능 → 추가 기간 데이터 필요
+   - class_weight 외 불균형 처리(SMOTE, threshold moving, cost-sensitive) 및 간단한 튜닝은 group-aware CV 안에서만

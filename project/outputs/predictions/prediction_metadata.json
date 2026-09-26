@@ -1,0 +1,20 @@
+{
+  "CN7": {
+    "source": "CN7",
+    "experiment": "A",
+    "model": "LogisticRegression",
+    "class_weight": "None",
+    "threshold_for_predicted_label": 0.5,
+    "n_rows": 35239,
+    "note": "inspection_rank is a baseline ranking (defect_probability descending), not a final inspection priority algorithm. labeled/unlabeled files were standardized separately, so treat probabilities as relative scores (see README)."
+  },
+  "RG3": {
+    "source": "RG3",
+    "experiment": "A",
+    "model": "LogisticRegression",
+    "class_weight": "None",
+    "threshold_for_predicted_label": 0.5,
+    "n_rows": 35941,
+    "note": "inspection_rank is a baseline ranking (defect_probability descending), not a final inspection priority algorithm. labeled/unlabeled files were standardized separately, so treat probabilities as relative scores (see README)."
+  }
+}

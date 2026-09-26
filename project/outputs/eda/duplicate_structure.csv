@@ -1,0 +1,5 @@
+dataset,n_rows,n_unique_feature_rows,group_size_counts,share_size2_groups_adjacent,"label_pattern_(size,n_pos)_counts",n_positive,n_positive_with_identical_negative_twin,bound_recall_at_zero_FP,bound_precision_at_full_recall,bound_f1_at_full_recall
+labeled_cn7,1211,606,"{1: 1, 2: 605}",0.9421487603305785,"{'(1, 0)': 1, '(2, 0)': 591, '(2, 1)': 11, '(2, 2)': 3}",17.0,11.0,0.35294117647058826,0.6071428571428571,0.7555555555555554
+labeled_rg3,1182,591,{2: 591},0.9712351945854484,"{'(2, 0)': 566, '(2, 1)': 25}",25.0,25.0,0.0,0.5,0.6666666666666666
+unlabeled_cn7,35239,28771,"{1: 22303, 2: 6468}",0.9998453927025356,,,,,,
+unlabeled_rg3,35941,29707,"{1: 23473, 2: 6234}",0.9998395893487327,,,,,,
