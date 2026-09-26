@@ -1,0 +1,10 @@
+dataset,experiment,validation,n_train,n_val,n_pos_train,n_pos_val,share_val_rows_with_identical_row_in_train
+CN7,A,random_holdout,968,243,14,3,0.7283950617283951
+RG3,A,random_holdout,945,237,20,5,0.8396624472573839
+CN7+RG3,B,random_holdout,1914,479,34,8,0.8079331941544885
+CN7,A,group_holdout,969,242,13,4,0.0
+RG3,A,group_holdout,946,236,20,5,0.0
+CN7+RG3,B,group_holdout,1913,480,34,8,0.0
+CN7,A,ordered_holdout,969,242,17,0,0.0
+RG3,A,ordered_holdout,946,236,20,5,0.0
+CN7+RG3,B,ordered_holdout,1915,478,37,5,0.0

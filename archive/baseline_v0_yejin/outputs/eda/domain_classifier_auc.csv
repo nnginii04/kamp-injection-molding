@@ -1,0 +1,3 @@
+domain_classifier,roc_auc
+RandomForest,1.0
+LogisticRegression,0.40361561975247645
