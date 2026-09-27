@@ -24,6 +24,15 @@ PUBLIC_VERIFIED = {
 }
 
 
+# 사실 10 판정 기준 (scripts/verify_public_link.py 와 report·메타데이터가 같은 문장을 쓴다)
+OVERLAP_ROUND = 3
+OVERLAP_CRITERION = (
+    "겹침 판정: 공개 원본에서 (TimeStamp, PART_NAME) 키가 1:1 로 매칭되고 대회 공정변수 24개를 소수 3자리로 반올림한 값이 "
+    "전부 같으면 같은 행(행 단위). PART_NAME 을 빼고 (TimeStamp, 공정변수 24개)가 같으면 같은 shot(짝 단위). "
+    "대회 labeled 와 unlabeled 의 Unnamed: 0 은 서로 다른 번호 체계라 둘 사이의 매칭에는 쓰지 않음."
+)
+
+
 def pair_order_leak_text() -> str:
     parts = []
     for p, f in PUBLIC_VERIFIED.items():

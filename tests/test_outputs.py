@@ -35,13 +35,15 @@ class TestOutputs(unittest.TestCase):
 
     def test_unlabeled_overlap_flag_and_meta(self):
         for d in DIRS:
-            t = pd.read_csv(d / "predictions_unlabeled.csv", usecols=["mold", "in_labeled_train"])
+            cols = ["in_labeled_train_row", "in_labeled_train_shot"]
+            t = pd.read_csv(d / "predictions_unlabeled.csv", usecols=["mold", *cols])
             meta = json.loads((d / "predictions_unlabeled_meta.json").read_text(encoding="utf-8"))
             self.assertTrue(any("labeled 행이 들어 있음" in w for w in meta["warnings"]))
             self.assertTrue(any("과소평가" in w for w in meta["warnings"]))
             cfg = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
             if not cfg["external"]["enabled"]:
-                self.assertTrue(t["in_labeled_train"].isna().all(), "external 꺼짐인데 in_labeled_train 이 채워짐")
+                self.assertTrue(t[cols].isna().all().all(), "external 꺼짐인데 in_labeled_train_* 가 채워짐")
+            self.assertIn("in_labeled_train_criterion", meta)
 
     def test_fold_id_file(self):
         cfg = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))

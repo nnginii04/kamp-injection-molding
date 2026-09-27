@@ -95,7 +95,8 @@ def write(path, cfg, audit, dropped, table, ci, choices, final_summ, err, type_t
                  f"/ unlabeled 짝 크기 분포 {a['unlabeled_shot_size_hist']}")
         L.append("  - ⚠ 0이어도 '겹침 없음'이 아님: 파일별 표준화로 같은 행도 z값이 다름. 공개 원본 검증 결과 "
                  f"**대회 unlabeled 안에 labeled 행이 들어 있음** ({known_facts.overlap_text()}, 사실 10) "
-                 "→ unlabeled 로 학습하거나 unlabeled 예측을 평가에 쓰지 않음\n")
+                 "→ unlabeled 로 학습하거나 unlabeled 예측을 평가에 쓰지 않음")
+        L.append(f"  - {known_facts.OVERLAP_CRITERION}\n")
         L.append(f"![](figures/audit_{p}.png)\n")
     L.append(f"제거한 상수열: {dropped}\n")
 
@@ -317,7 +318,8 @@ def write(path, cfg, audit, dropped, table, ci, choices, final_summ, err, type_t
         L.append("- `predictions_holdout.csv`: 처음부터 떼어 둔 홀드아웃 블록 예측과 성능(위 표 test_*)")
     L.append("- `predictions_unlabeled.csv`: unlabeled 예측. `in_labeled_range`=False인 행은 학습 범위 밖 → 신뢰도 낮음")
     L.append(f"  - ⚠ 대회 unlabeled 안에 labeled 행이 들어 있음 ({known_facts.overlap_text()}). "
-             "`in_labeled_train`=True 행은 학습에 쓰인 행이라 uncertainty 가 과소평가될 수 있음. "
+             "`in_labeled_train_row`(행 자체) / `in_labeled_train_shot`(같은 shot 의 짝 포함)=True 행은 학습에 쓰인 행이라 "
+             "uncertainty 가 과소평가될 수 있음. "
              "대회 파일만으로는 판정할 수 없어 기본값은 NaN (external.enabled=true + 검증 결과가 있을 때만 채움). "
              "자세한 경고는 `predictions_unlabeled_meta.json`")
     if any(a["scale_check"]["both_files_mean0_std1"] and a["scale_check"]["value_overlap_mean"] < 0.5 for a in audit.values()):

@@ -53,24 +53,28 @@ def select_model(table, p, sel, n_repeats):
 
 
 def load_labeled_overlap(cfg, out, log) -> dict:
-    """unlabeled 중 labeled 와 같은 행(사실 10)의 row_id. 대회 파일만으로는 판정할 수 없어(파일별 표준화)
-    external.enabled=true 이고 scripts/verify_public_link.py 결과가 있을 때만 읽는다. 없으면 제품별 None."""
+    """unlabeled 중 labeled 와 겹치는 행(사실 10). 판정 기준은 known_facts.OVERLAP_CRITERION.
+    대회 파일만으로는 판정할 수 없어(파일별 표준화) external.enabled=true 이고
+    scripts/verify_public_link.py 결과(unlabeled_overlap_flags.csv)가 있을 때만 읽는다.
+    반환: 제품별 {"row": 행 단위 겹침 row_id 집합, "shot": shot 단위 겹침 row_id 집합} 또는 None."""
     products = list(cfg["products"])
+    na_msg = "in_labeled_train_row/_shot = NaN"
     if not cfg.get("external", {}).get("enabled", False):
-        log("  ⚠ unlabeled 안의 labeled 행(사실 10)은 대회 파일만으로 판정 불가 → in_labeled_train = NaN "
-            "(external.enabled=false)")
+        log(f"  ⚠ unlabeled 안의 labeled 행(사실 10)은 대회 파일만으로 판정 불가 → {na_msg} (external.enabled=false)")
         return {p: None for p in products}
-    f = out / "verification" / "labeled_rows_in_unlabeled.csv"
+    f = out / "verification" / "unlabeled_overlap_flags.csv"
     if not f.exists():
-        log(f"  ⚠ external.enabled=true 이지만 {f} 가 없음 → python scripts/verify_public_link.py 를 먼저 실행. "
-            "in_labeled_train = NaN")
+        log(f"  ⚠ external.enabled=true 이지만 {f} 가 없음 → python scripts/verify_public_link.py --enable 을 먼저 실행. "
+            f"{na_msg}")
         return {p: None for p in products}
     t = pd.read_csv(f)
     res = {}
     for p in products:
-        ids = t.loc[t["product"] == p, "unlabeled_row_ids"].dropna().astype(str).str.split()
-        res[p] = {int(x) for lst in ids for x in lst}
-    log(f"  in_labeled_train: 공개 원본 검증 결과 사용 ({f.name}) " + ", ".join(f"{p} {len(v)}행" for p, v in res.items()))
+        tp = t[t["product"] == p]
+        res[p] = {"row": set(tp.loc[tp.in_labeled_train_row, "unlabeled_row_id"].astype(int)),
+                  "shot": set(tp.loc[tp.in_labeled_train_shot, "unlabeled_row_id"].astype(int))}
+    log(f"  in_labeled_train: 공개 원본 검증 결과 사용 ({f.name}) "
+        + ", ".join(f"{p} 행 {len(v['row'])}·shot {len(v['shot'])}" for p, v in res.items()))
     return res
 
 
@@ -340,9 +344,12 @@ def main():
             "대회 unlabeled 안에 labeled 행이 들어 있음 (공개 원본 검증: " + known_facts.overlap_text()
             + "). unlabeled 예측을 성능 평가에 쓰거나 unlabeled 로 학습(이상탐지·pseudo-label)하지 말 것.",
             "labeled/unlabeled 는 파일별로 따로 표준화돼 같은 z값이 다른 물리값 → 점수·확률의 절대값보다 순위를 참고.",
-            "in_labeled_train=True 인 행은 최종 모델과 fold 모델의 학습에 쓰인 행이라 uncertainty 가 과소평가될 수 있음.",
+            "in_labeled_train_row=True 인 행은 그 행 자체가, in_labeled_train_shot=True 인 행은 공정값이 같은 짝(같은 shot)이 "
+            "최종 모델과 fold 모델의 학습에 쓰였음 → uncertainty 가 과소평가될 수 있음.",
         ],
-        "in_labeled_train": {p: ("공개 원본 검증 결과로 채움" if overlap.get(p) is not None
+        "in_labeled_train_criterion": known_facts.OVERLAP_CRITERION,
+        "in_labeled_train": {p: ("공개 원본 검증 결과(outputs/verification/unlabeled_overlap_flags.csv)로 채움"
+                                 if overlap.get(p) is not None
                                  else "NaN — 대회 파일만으로 판정 불가 (external.enabled=false 또는 검증 결과 없음)")
                              for p in products},
         "uncertainty": "선택된 CV 방식의 fold 모델 전체(n_splits × n_repeats) 예측의 표준편차 (모델 점수 단위, ddof=1). "

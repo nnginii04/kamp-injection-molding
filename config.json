@@ -61,6 +61,6 @@
   "external": {
     "enabled": false,
     "public_path": "~/Downloads/04. Dataset_Molding.zip",
-    "_note": "KAMP 공개 원본(zip 또는 압축 푼 폴더). 대회 규정 확인 전까지 모델 입력 금지. scripts/link_public.py·verify_public_link.py 의 해석·검증 전용이며 읽기만 한다. run_all.py 는 원본을 읽지 않고, enabled=true 일 때만 검증 결과(outputs/verification/labeled_rows_in_unlabeled.csv)로 unlabeled 예측의 in_labeled_train 을 채운다."
+    "_note": "KAMP 공개 원본(zip 또는 압축 푼 폴더). 대회 규정 확인 전까지 모델 입력 금지. scripts/link_public.py·verify_public_link.py 의 해석·검증 전용이며 읽기만 한다. run_all.py 는 원본을 읽지 않고, enabled=true 일 때만 검증 결과(outputs/verification/unlabeled_overlap_flags.csv)로 unlabeled 예측의 in_labeled_train_row·in_labeled_train_shot 을 채운다. 판정 기준은 src/known_facts.py OVERLAP_CRITERION."
   }
 }

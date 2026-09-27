@@ -13,7 +13,8 @@
 - 불확실성(uncertainty, 모델 점수 단위 표준편차, ddof=1)
   · labeled CV 행: 반복별 OOF 점수의 표준편차 (각 점수는 그 행을 학습에 쓰지 않은 모델의 예측)
   · holdout / unlabeled 행: 선택된 CV 방식의 fold 모델 전체(n_splits × n_repeats)의 예측 표준편차
-  · unlabeled 중 labeled 와 같은 행(in_labeled_train=True)은 학습에 쓰인 행이라 불확실성이 과소평가될 수 있음
+  · unlabeled 중 labeled 와 겹치는 행(in_labeled_train_row / _shot=True)은 학습에 쓰인 행(또는 그 짝)이라
+    불확실성이 과소평가될 수 있음. 판정 기준: known_facts.OVERLAP_CRITERION
 - 판정 임계값: 선택된 CV 방식에서 fold 내부로 정한 임계값의 중앙값 (검증 데이터를 보지 않고 결정)
 - 위험 등급: 상위 2% 즉시검사 / 상위 10% 우선검사 / 나머지 일반 (config로 조정)
 """
@@ -106,9 +107,9 @@ def out_of_range(train: pd.DataFrame, target: pd.DataFrame, feats: list[str]) ->
 
 
 def train_and_predict(product, choice, frames, feats_by, oof_all, metrics, cfg, fig_dir, types,
-                      test_frame: pd.DataFrame | None = None, labeled_overlap: set | None = None, log=print):
-    """labeled_overlap: unlabeled 중 labeled 와 같은 행의 row_id 집합 (공개 원본 검증 결과, external.enabled 일 때만).
-    None 이면 대회 파일만으로는 판정할 수 없으므로 in_labeled_train 을 NaN 으로 둔다."""
+                      test_frame: pd.DataFrame | None = None, labeled_overlap: dict | None = None, log=print):
+    """labeled_overlap: {"row": 행 단위 겹침 row_id 집합, "shot": shot 단위 겹침 row_id 집합}
+    (공개 원본 검증 결과, external.enabled 일 때만). None 이면 대회 파일만으로는 판정할 수 없으므로 두 열 모두 NaN."""
     scenario, model_name, mode = choice["scenario"], choice["model"], choice["cv_mode"]
     dataset = "pooled" if scenario == "pooled" else product
     lab, unl = frames[dataset]
@@ -193,8 +194,10 @@ def train_and_predict(product, choice, frames, feats_by, oof_all, metrics, cfg, 
     target["uncertainty"] = _std(fold_scores["unlabeled"], 0) if "unlabeled" in fold_scores else np.nan
     target["uncertainty_n"] = n_fold_models
     # 대회 파일만으로는 labeled 와 같은 행인지 알 수 없음(파일별 표준화) → 공개 원본 검증 결과가 있을 때만 채움
-    target["in_labeled_train"] = (pd.array(target["row_id"].isin(labeled_overlap).to_numpy(), dtype="boolean")
-                                  if labeled_overlap is not None else pd.array([pd.NA] * len(target), dtype="boolean"))
+    for level in ("row", "shot"):
+        target[f"in_labeled_train_{level}"] = (
+            pd.array(target["row_id"].isin(labeled_overlap[level]).to_numpy(), dtype="boolean")
+            if labeled_overlap is not None else pd.array([pd.NA] * len(target), dtype="boolean"))
     target["mold"] = product
 
     base_rate = float(om.y.mean())
@@ -210,9 +213,12 @@ def train_and_predict(product, choice, frames, feats_by, oof_all, metrics, cfg, 
                "labeled_defect_rate": base_rate,
                "unlabeled_in_labeled_range_share": float(target.in_labeled_range.mean()),
                "uncertainty_fold_models": n_fold_models, "fold_model_oof_max_diff": max_diff,
-               "unlabeled_in_labeled_train": (int(target.in_labeled_train.sum()) if labeled_overlap is not None
-                                              else None),
+               "unlabeled_in_labeled_train_row": (int(target.in_labeled_train_row.sum())
+                                                  if labeled_overlap is not None else None),
+               "unlabeled_in_labeled_train_shot": (int(target.in_labeled_train_shot.sum())
+                                                   if labeled_overlap is not None else None),
                **test_metrics}
     cols = ["mold", "product", "row_id", "defect_prob", "pred_label", "priority_rank", "risk_tier", "risk_score",
-            "uncertainty", "uncertainty_n", "out_of_range_features", "in_labeled_range", "in_labeled_train"]
+            "uncertainty", "uncertainty_n", "out_of_range_features", "in_labeled_range",
+            "in_labeled_train_row", "in_labeled_train_shot"]
     return target[cols].sort_values("row_id"), lab_pred, test_pred, summary, model
