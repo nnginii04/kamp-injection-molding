@@ -168,6 +168,34 @@ def write(path, cfg, audit, dropped, table, ci, choices, final_summ, err, type_t
         if not c["beats_chance"]:
             L.append(f"  - ⚠ **{p.upper()}는 어떤 모델도 무작위 기준선을 의미 있게 넘지 못함** → "
                      "공정변수로 설명되지 않는 불량(캐비티/금형 요인, 라벨 품질 등). 예측 성능 대신 원인 진단과 한계로 서술.")
+    # 1-SE 주석: 반복 간 불량 배분이 같으면 반복 간 표준편차(=SE 의 근거)가 분할 운을 덜 반영
+    if fold_check is not None and len(fold_check) and "valid_defect_rows" in fold_check:
+        fc = fold_check[(fold_check.cv_mode == sel["cv_mode"]) & (fold_check.n_splits == cfg["cv"]["n_splits"])]
+        for p, g in fc.groupby("mold"):
+            allocs = {tuple(sorted(x.valid_defect_rows.astype(int))) for _, x in g.groupby("repeat")}
+            if len(allocs) == 1 and p in choices:
+                L.append(f"  - ※ 1-SE 주석 ({p.upper()}): `{sel['cv_mode']}` CV 는 반복마다 검증 fold 의 불량 배분이 "
+                         f"{list(next(iter(allocs)))} 으로 같음 → 반복 간 표준편차가 분할 운을 일부만 반영해 **SE 가 과소추정**됨 "
+                         "(1-SE 허용 폭이 실제보다 좁음)")
+    for p, c in choices.items():
+        v = exp.get(f"_selection_verdict_{p}")
+        if not v:
+            continue
+        base, alt = v["base"], v["alt"]
+        L.append(f"\n**선택 확인 ({p.upper()}): `{base}` vs 가중치 없는 `{alt}` — fold 단위** "
+                 "(각 fold 의 검증 shot_ap 를 직접 비교)\n")
+        L.append(md(exp[f"selection_check_{p}_summary"]))
+        L.append("\n**보정 후 Brier · 검사비율 재현율** (Brier 는 shot 그룹 CV 로 보정한 확률, 작을수록 좋음)\n")
+        L.append(md(exp[f"selection_check_{p}_calib"], floatfmt=4))
+        bm = v["by_mode"]
+        rule = ", ".join(f"{m} {x['alt_wins']}/{x['folds']}" for m, x in bm.items())
+        L.append(f"\n- 사전 기준: block·shot 양쪽에서 불량이 있는 fold 의 과반을 `{alt}` 가 이기면 교체 → {rule} 승 → "
+                 + ("**기준 충족**" if v["swap_by_rule"] else f"**기준 미충족, `{base}` 유지**"))
+        pm = v.get("pooled", {}).get(sel["cv_mode"], {})
+        if not v["swap_by_rule"] and pm and pm.get(alt, 0) > pm.get(base, 0):
+            L.append(f"- pooled OOF(2-5·2-8)에서는 `{alt}` 가 높게 나오는데 ({sel['cv_mode']} shot_ap {pm[alt]:.3f} vs {pm[base]:.3f}), pooled OOF 는 fold 마다 다른 모델의 점수를 이어 붙여 "
+                     "계산하므로 **fold 간 점수 눈금 차이가 섞일 수 있음** (가설, 미검증). 최종 선택은 미리 정한 기준(fold 단위 승패)과 "
+                     "현장 운영 지표인 검사비율 재현율로 판단함.")
     L.append("\n![](figures/model_comparison.png)\n")
 
     if ablation is not None and len(ablation):
@@ -268,6 +296,36 @@ def write(path, cfg, audit, dropped, table, ci, choices, final_summ, err, type_t
 
     # 3 ------------------------------------------------------------------
     L.append("## 3. 영향요인 및 오류분석\n")
+    for p, c in choices.items():
+        dt, info = exp.get(f"defect_type_detection_{p}"), exp.get(f"_defect_type_info_{p}")
+        if dt is None or not len(dt) or not info or not info["process_wide_shot_idx"]:
+            continue
+        L.append(f"### 3-0. 핵심 발견 ({p.upper()}): 공정변수는 'shot 전체 이상'은 잡고 '캐비티 국소 불량'은 못 잡는다\n")
+        L.append(f"`{c['model']}` 의 교차검증 예측에서 불량 유형별로 잡힌 행 수 (반복당 평균). "
+                 "`process_wide` = 짝(LH/RH) 둘 다 불량, `cavity_local` = 한쪽만 불량\n")
+        L.append(md(dt, floatfmt=1))
+        pw = info["process_wide_shot_idx"]
+        blk = dt[(dt.cv_mode == "block") & (dt.defect_type == "process_wide")]
+        L.append(f"\n- block CV(처음 보는 구간)에서 상위 2%·5%·점수 0.5 이상으로 잡힌 불량은 **짝 둘 다 불량인 shot "
+                 f"{len(pw)}개({int(blk.defect_rows.iloc[0]) if len(blk) else '?'}행)뿐**이고, 한쪽만 불량인 행은 잡히지 않음 "
+                 "→ 4-1 표에서 TP 가 약 6행에서 멈추는 이유")
+        L.append("- shot CV 에서 한쪽만 불량인 행이 일부 잡히는 것은 같은 불량 구간의 이웃 shot 이 학습에 들어간 경우로 보임 "
+                 "(block CV 에서는 사라짐)")
+        L.append(f"- **한계**: 근거가 되는 '짝 둘 다 불량' shot 은 {len(pw)}개(순번 {pw[0]}~{pw[-1]}"
+                 + (", 연속" if info["consecutive"] else "") + ")뿐 — 한 번의 공정 이상 구간일 수 있어 일반화에 주의")
+        only_local = [q for q, a in audit.items() if a["defect_shots"] and not a["process_wide_shots(양쪽 불량)"]]
+        link = ("; ".join(f"{q.upper()} 는 불량 shot {audit[q]['defect_shots']}개가 모두 '한쪽만 불량'" for q in only_local)
+                + " → 신호가 없는 것과 같은 이유로 연결됨. ") if only_local else ""
+        if cfg.get("external", {}).get("enabled"):
+            cav = {q: f["defects_by_cavity"] for q, f in known_facts.PUBLIC_VERIFIED.items()}
+            one_side = [q.upper() for q, v in cav.items() if min(v.values()) == 0]
+            L.append(f"- {link}공개 원본 연결 결과(해석용, {known_facts.SOURCE}): 불량의 캐비티 분포 "
+                     + ", ".join(f"{q.upper()} {v}" for q, v in cav.items())
+                     + (f" — {', '.join(one_side)} 는 불량이 한 캐비티에만 있음. " if one_side else ". ")
+                     + "**공정변수는 shot 전체 이상을 알려주지만 캐비티 국소 불량은 알려주지 못한다.**\n")
+        else:
+            L.append(f"- {link}**공정변수는 shot 전체 이상을 알려주지만 캐비티 국소 불량은 알려주지 못한다.** "
+                     "(캐비티 LH/RH 분포는 공개 원본 연결로만 확인 가능 — external.enabled=false 라 인용하지 않음)\n")
     L.append("### 3-1. 불량 유형별 탐지율 (샷 단위, 반복 평균)\n")
     L.append("`pw` = " + TYPE_KO["process_wide"] + ", `cl` = " + TYPE_KO["cavity_local"]
              + ". `thr` = 판정 임계값 기준, `@5%` = 위험 상위 5% 샷만 검사할 때\n")
@@ -310,6 +368,8 @@ def write(path, cfg, audit, dropped, table, ci, choices, final_summ, err, type_t
     L.append(f"- 위험 등급: 교차검증 점수 기준 상위 {cfg['risk_tiers']['inspect_now_top']:.0%}에 해당하는 점수 이상 `즉시검사`, "
              f"상위 {cfg['risk_tiers']['priority_top']:.0%} 이상 `우선검사`, 나머지 `일반`. "
              "unlabeled에서 등급 비율이 2%/10%와 크게 다르면 운전 분포가 달라졌다는 신호")
+    L.append("- **운영 제안 (3-0 근거)**: 공정 데이터 모델은 'shot 전체 이상(공정 조건 이탈)' 선별에 쓰고, "
+             "캐비티 국소 불량(한쪽만 불량)은 금형·캐비티별 점검이나 비전 검사 등 **별도 수단**이 필요함")
     L.append("- 확률 보정(Platt)의 성능 확인용 내부 CV 도 shot 단위 그룹 분할 (LH/RH 짝이 갈라지지 않게)")
     L.append("- 모든 예측 파일에 `mold`(cn7/rg3) 열과 `uncertainty` 열: labeled CV 행은 반복별 OOF 점수의 표준편차, "
              "holdout·unlabeled 행은 fold 모델 전체 예측의 표준편차 (`uncertainty_n` = 개수)")

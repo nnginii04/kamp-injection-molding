@@ -13,6 +13,7 @@ PUBLIC_VERIFIED = {
         "expected_first_if_cavity": 0.629,       # 순서가 캐비티를 뜻한다면 기대되는 비율
         "labeled_rows_in_unlabeled": (1210, 1211),
         "labeled_defects_in_unlabeled": 17,
+        "defects_by_cavity": {"RH": 13, "LH": 4},
     },
     "rg3": {
         "first_row_RH_share": 0.563,
@@ -20,6 +21,7 @@ PUBLIC_VERIFIED = {
         "expected_first_if_cavity": 0.563,
         "labeled_rows_in_unlabeled": (774, 1182),
         "labeled_defects_in_unlabeled": 16,
+        "defects_by_cavity": {"RH": 25, "LH": 0},
     },
 }
 

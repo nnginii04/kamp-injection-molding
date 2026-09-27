@@ -231,13 +231,13 @@ def main():
         ablation.to_csv(tab_dir / "ablation_pair_position.csv", index=False, encoding="utf-8-sig")
 
     # 추가 실험 (Phase 3): 같은 분할, 모델 선택에는 미사용
-    exp_tables, exp_extra = {}, {}
+    exp_tables, exp_extra, exp_oof = {}, {}, {}
     run_exp = cfg.get("experiments", {}).get("enabled") and "separate" in cfg["scenarios"]
     if run_exp:
         log("[5c/9] 추가 실험 (제품별 vs 통합, class_weight, 기준선) — 모델 선택에는 미사용")
         r = experiments.run_cv_experiments(frames, products, feats_by["separate"], metrics, oof_all, cfg, audit,
                                            log=log)
-        exp_tables, exp_extra = r["tables"], r["extra_metrics"]
+        exp_tables, exp_extra, exp_oof = r["tables"], r["extra_metrics"], r["extra_oof"]
 
     # 6. 선택 + 신뢰구간 ----------------------------------------------------------
     log("[6/9] 모델 선택 및 신뢰구간")
@@ -259,7 +259,7 @@ def main():
         log("[6b/9] 추가 실험 (임계값·검사비율, 이전 베이스라인 비교, 성능 범위, holdout 설계, 가상 선택)")
         exp_tables.update(experiments.run_post_selection(
             frames, products, feats_by["separate"], metrics, oof_all, table, choices, cfg, audit, exp_extra,
-            fold_check, ROOT, args.synthetic, log=log))
+            fold_check, ROOT, args.synthetic, log=log, extra_oof=exp_oof, types_by_product=types_by_product))
         for k, t in exp_tables.items():
             if isinstance(t, pd.DataFrame):
                 t.to_csv(tab_dir / f"{k}.csv", index=False, encoding="utf-8-sig")

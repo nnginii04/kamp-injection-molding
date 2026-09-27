@@ -158,7 +158,7 @@ def exp_class_weight(frames, products, feats, metrics, oof_all, cfg, ceil):
     t_none["class_weight"], t_none["model"] = "none", t_none["model"].map(lambda x: BASE_MODEL.get(x, x))
     t_bal["class_weight"] = t_bal["model"].map(lambda x: "balanced_subsample" if x == "rf" else "balanced")
     t = pd.concat([t_bal, t_none], ignore_index=True)
-    return t[["class_weight"] + [c for c in t.columns if c != "class_weight"]], m
+    return t[["class_weight"] + [c for c in t.columns if c != "class_weight"]], m, o
 
 
 def exp_dummies(frames, products, feats, metrics, oof_all, cfg, ceil):
@@ -353,6 +353,94 @@ def hypothetical_selection(metrics, extra_metrics: dict, choices, sel, n_repeats
     return pd.DataFrame(rows)
 
 
+# 선택 확인 / 불량 유형별 탐지 -------------------------------------------------------------------
+def _shot_ap(g):
+    s = g.groupby("shot_id").agg(y=("y", "max"), p=("p", "max"))
+    return average_precision_score(s.y, s.p) if s.y.sum() else np.nan
+
+
+def selection_check(oof_all, oof_none, choice, product) -> dict | None:
+    """최종 모델 vs 같은 모델의 가중치 없는 변형(<model>_none).
+    - fold 단위 shot_ap 승/패/무 (block 은 불량 최다 fold 와 나머지로 나눔)
+    - 사전 기준: block·shot 양쪽에서 불량이 있는 fold 의 과반을 변형이 이기면 교체 후보
+    - 보정 후 Brier(shot 그룹 CV Platt), 검사비율 2%/10% 재현율"""
+    from .evaluate import recall_at_budget
+    from .final import fit_platt
+    base, alt = choice["model"], f"{choice['model']}_none"
+    b = oof_none[(oof_none.model == alt) & (oof_none["product"] == product)]
+    a = oof_all[(oof_all.dataset == choice["dataset"]) & (oof_all.model == base) & (oof_all["product"] == product)]
+    if b.empty or a.empty:
+        return None
+    rows = []
+    for (mode, rep, fold), ga in a.groupby(["cv_mode", "repeat", "fold"]):
+        gb = b[(b.cv_mode == mode) & (b.repeat == rep) & (b.fold == fold)]
+        rows.append({"cv_mode": mode, "repeat": rep, "fold": fold, "valid_defect_rows": int(ga.y.sum()),
+                     f"shot_ap[{base}]": _shot_ap(ga), f"shot_ap[{alt}]": _shot_ap(gb)})
+    f = pd.DataFrame(rows)
+    d = f[f"shot_ap[{alt}]"] - f[f"shot_ap[{base}]"]
+    f["result"] = np.select([d > 1e-12, d < -1e-12], [f"{alt} 승", f"{base} 승"], "무")
+    mx = f[f.cv_mode == "block"].valid_defect_rows.max() if (f.cv_mode == "block").any() else None
+    f["group"] = np.where(f.cv_mode != "block", f.cv_mode + ": 전체",
+                          np.where(f.valid_defect_rows == mx, f"block: 불량 최다 fold ({mx}행)", "block: 나머지 fold"))
+    has = f[f.valid_defect_rows > 0]
+    summ = has.groupby("group").agg(folds=("result", "size"),
+                                    alt_wins=("result", lambda r: int((r == f"{alt} 승").sum())),
+                                    base_wins=("result", lambda r: int((r == f"{base} 승").sum())),
+                                    ties=("result", lambda r: int((r == "무").sum())),
+                                    **{f"mean shot_ap[{base}]": (f"shot_ap[{base}]", "mean"),
+                                       f"mean shot_ap[{alt}]": (f"shot_ap[{alt}]", "mean")}).reset_index()
+    verdict = {}
+    for mode, g in has.groupby("cv_mode"):
+        w = int((g.result == f"{alt} 승").sum())
+        verdict[mode] = {"folds": len(g), "alt_wins": w, "majority": bool(w > len(g) / 2)}
+    swap = bool(verdict) and all(v["majority"] for v in verdict.values())
+    pooled = {}  # 반복별로 fold 를 이어 붙인 shot_ap 의 평균 (2-5·2-8 과 같은 방식)
+    for mode in f.cv_mode.unique():
+        pooled[mode] = {name: float(np.mean([_shot_ap(r) for _, r in o[o.cv_mode == mode].groupby("repeat")]))
+                        for name, o in ((base, a), (alt, b))}
+    cal_rows = []
+    for name, o in ((base, a), (alt, b)):
+        for mode, g in o.groupby("cv_mode"):
+            om = g.groupby("row").agg(y=("y", "first"), p=("p", "mean"), shot_id=("shot_id", "first"))
+            _, cal = fit_platt(om.p.to_numpy(), om.y.to_numpy(), om.shot_id.to_numpy())
+            cal_rows.append({"cv_mode": mode, "model": name, "brier_calibrated_cv": float(np.mean((cal - om.y) ** 2)),
+                             "brier_constant": float(om.y.mean() * (1 - om.y.mean())),
+                             **{f"row_recall@{int(bb * 100)}%": float(np.mean([recall_at_budget(r.y, r.p, bb)
+                                                                                 for _, r in g.groupby("repeat")]))
+                                for bb in (0.02, 0.10)}})
+    return {"folds": f, "summary": summ, "calib": pd.DataFrame(cal_rows),
+            "verdict": {"base": base, "alt": alt, "by_mode": verdict, "swap_by_rule": swap, "pooled": pooled}}
+
+
+def defect_type_detection(oof_all, choice, product, types: pd.Series, budgets=(0.02, 0.05, 0.10),
+                          threshold=0.5) -> tuple[pd.DataFrame, dict]:
+    """불량 유형별로 몇 행이 잡히는가 (반복당 평균). 상위 k% = 점수 순위 ≤ ceil(n·k), 임계값 = 모델 점수 ≥ threshold."""
+    o = oof_all[(oof_all.dataset == choice["dataset"]) & (oof_all.model == choice["model"])
+                & (oof_all["product"] == product)].copy()
+    o["type"] = o.shot_id.map(types).fillna("normal")
+    rows = []
+    for mode, g in o.groupby("cv_mode"):
+        caught = []
+        for rep, gr in g.groupby("repeat"):
+            rank = gr.p.rank(ascending=False, method="average")
+            d = gr[gr.y == 1].assign(**{f"top{int(b * 100)}%": rank[gr.y == 1] <= int(np.ceil(len(gr) * b))
+                                        for b in budgets},
+                                     **{f"score≥{threshold:g}": gr.p[gr.y == 1] >= threshold})
+            caught.append(d.assign(repeat=rep))
+        c = pd.concat(caught)
+        cols = [f"top{int(b * 100)}%" for b in budgets] + [f"score≥{threshold:g}"]
+        for t, gt in c.groupby("type"):
+            r = {"cv_mode": mode, "defect_type": t, "shots": gt.shot_id.nunique(), "defect_rows": gt.row_id.nunique()}
+            for col in cols:
+                r[f"TP rows {col}"] = float(gt.groupby("repeat")[col].sum().mean())
+            rows.append(r)
+    order = o.groupby("shot_id").row_id.min().sort_values()
+    idx = pd.Series(np.arange(len(order)), index=order.index)
+    pw = sorted(int(idx[s]) for s in types[types.eq("process_wide")].index if s in idx.index)
+    info = {"process_wide_shot_idx": pw, "consecutive": bool(pw) and pw == list(range(pw[0], pw[0] + len(pw)))}
+    return pd.DataFrame(rows), info
+
+
 # 실행 묶음 -----------------------------------------------------------------------------------
 def run_cv_experiments(frames, products, feats, metrics, oof_all, cfg, audit, log=print) -> dict:
     ceil = ceilings(audit)
@@ -361,16 +449,26 @@ def run_cv_experiments(frames, products, feats, metrics, oof_all, cfg, audit, lo
     res["exp_ab"], extra["pooled"] = exp_separate_vs_pooled(frames, products, feats, metrics, oof_all, cfg, ceil)
     res["exp_domain_auc"] = domain_classifier_auc(frames, products, feats, cfg["seed"])
     log("  [실험 2] class_weight None vs balanced")
-    res["exp_class_weight"], extra["none"] = exp_class_weight(frames, products, feats, metrics, oof_all, cfg, ceil)
+    res["exp_class_weight"], extra["none"], extra_oof_none = exp_class_weight(frames, products, feats, metrics,
+                                                                            oof_all, cfg, ceil)
     log("  [실험 3] 기준선 3종")
     res["exp_dummies"] = exp_dummies(frames, products, feats, metrics, oof_all, cfg, ceil)
-    return {"tables": res, "extra_metrics": extra}
+    return {"tables": res, "extra_metrics": extra, "extra_oof": {"none": extra_oof_none}}
 
 
 def run_post_selection(frames, products, feats, metrics, oof_all, table, choices, cfg, audit, extra_metrics,
-                       fold_check, root: Path, synthetic: bool, log=print) -> dict:
+                       fold_check, root: Path, synthetic: bool, log=print, extra_oof=None, types_by_product=None) -> dict:
     ceil = ceilings(audit)
     res = {}
+    log("  [선택 확인] 최종 모델 vs 가중치 없는 변형 (fold 단위)")
+    for p, c in choices.items():
+        sc = selection_check(oof_all, (extra_oof or {}).get("none", pd.DataFrame(columns=["model", "product"])), c, p)
+        if sc:
+            res[f"selection_check_{p}_folds"], res[f"selection_check_{p}_summary"] = sc["folds"], sc["summary"]
+            res[f"selection_check_{p}_calib"], res[f"_selection_verdict_{p}"] = sc["calib"], sc["verdict"]
+        if types_by_product and p in types_by_product:
+            t, info = defect_type_detection(oof_all, c, p, types_by_product[p])
+            res[f"defect_type_detection_{p}"], res[f"_defect_type_info_{p}"] = t, info
     focus = cfg["experiments"].get("threshold_products", ["cn7"])
     log("  [실험 4] 임계값 trade-off / 검사비율")
     for p in focus:
