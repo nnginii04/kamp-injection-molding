@@ -11,7 +11,7 @@
 2) class_weight None vs balanced
 3) 기준선 3종: dummy(prior) / most_frequent / stratified
 4) 최종 모델 임계값 trade-off (0.10~0.90) + 검사비율(budget) 표 — shot·block CV OOF 둘 다
-5) 이전 베이스라인(archive/baseline_v0_yejin) 수치와의 비교 사다리
+5) 이전 베이스라인(archive/baseline_v0) 수치와의 비교 사다리
 + 성능 범위(shot CV 낙관 ~ block CV 비관), holdout 설계 시뮬레이션(쓰지 않은 이유), 가상 모델 선택
 
 본 모델 선택(config.selection)은 바꾸지 않는다. 실험 모델까지 후보에 넣으면 선택이 달라지는지는 hypothetical_selection 으로 보고만 한다.
@@ -272,7 +272,7 @@ def holdout_designs(frames, products, cfg) -> pd.DataFrame:
 
 # 5) 이전 베이스라인 비교 ---------------------------------------------------------------------
 def baseline_v0_ladder(frames, products, feats, metrics, oof_all, cfg, ceil, root: Path, synthetic: bool):
-    """archive/baseline_v0_yejin 의 수치(5-fold 1회, 블록 없음)에서 이번 수치로 한 단계씩 조건을 바꿔 본다."""
+    """archive/baseline_v0 의 수치(5-fold 1회, 블록 없음)에서 이번 수치로 한 단계씩 조건을 바꿔 본다."""
     bc = cfg["experiments"]["baseline_v0"]
     arch = None
     f = root / bc["archive_csv"]

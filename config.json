@@ -48,7 +48,7 @@
     "dummies": ["dummy_most_frequent", "dummy_stratified"],
     "threshold_products": ["cn7"],
     "threshold_grid": {"start": 0.10, "stop": 0.90, "step": 0.05},
-    "baseline_v0": {"archive_csv": "archive/baseline_v0_yejin/outputs/cv_group5fold_comparison.csv"},
+    "baseline_v0": {"archive_csv": "archive/baseline_v0/outputs/cv_group5fold_comparison.csv"},
     "holdout_sim": {"seeds": 100, "frac": 0.25},
     "_note": "추가 실험(src/experiments.py). 본 분할(fold_id.csv)·pooled OOF 기준. 모델 선택(selection)에는 쓰지 않고, 실험 모델까지 넣었을 때 선택이 달라지는지는 보고만 한다."
   },

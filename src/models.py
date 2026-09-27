@@ -180,7 +180,7 @@ def make_model(name: str, seed: int):
                                       class_weight=None, random_state=seed, n_jobs=-1)
     if name == "lgbm_none":
         return _lgbm(seed, class_weight=None)
-    if name == "logreg_v0":  # archive/baseline_v0_yejin 의 LogisticRegression(class_weight=None) 재현
+    if name == "logreg_v0":  # archive/baseline_v0 의 LogisticRegression(class_weight=None) 재현
         return make_pipeline(StandardScaler(), LogisticRegression(max_iter=5000))
     if name == "spc_maxz":
         return SPCMaxZ()

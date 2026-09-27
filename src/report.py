@@ -265,7 +265,7 @@ def write(path, cfg, audit, dropped, table, ci, choices, final_summ, err, type_t
                  " → '무작위 기준선'으로는 most_frequent·stratified 를 보는 것이 정확\n")
     t = exp.get("exp_baseline_v0")
     if t is not None and len(t):
-        L.append("### 2-7. 이전 베이스라인(archive/baseline_v0_yejin)과 비교 — 왜 0.476 → 0.19~0.36 인가\n")
+        L.append("### 2-7. 이전 베이스라인(archive/baseline_v0)과 비교 — 왜 0.476 → 0.19~0.36 인가\n")
         L.append(md(_cols(t, ["product", "step", "change", "model", "cv", "repeats", "row_ap", "row_ap_sd", "shot_ap",
                              "row_ap_foldmean", "row_P_ceiling", "row_F1_ceiling"])))
         c = t[t["product"] == "cn7"].set_index("step")
