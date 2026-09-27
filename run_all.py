@@ -64,7 +64,7 @@ def load_labeled_overlap(cfg, out, log) -> dict:
         return {p: None for p in products}
     f = out / "verification" / "unlabeled_overlap_flags.csv"
     if not f.exists():
-        log(f"  ⚠ external.enabled=true 이지만 {f} 가 없음 → python scripts/verify_public_link.py --enable 을 먼저 실행. "
+        log(f"  ⚠ external.enabled=true 이지만 {rel(f)} 가 없음 → python scripts/verify_public_link.py --enable 을 먼저 실행. "
             f"{na_msg}")
         return {p: None for p in products}
     t = pd.read_csv(f)
@@ -141,7 +141,7 @@ def write_pipeline_predictions(oof_all: pd.DataFrame, models: list[str], out: Pa
         f = pred_dir / f"pipeline_{m}.csv"
         t.to_csv(f, index=False, encoding="utf-8-sig")
         written.append(f)
-    log(f"  교차검증 예측(공통 형식) {len(written)}개 → {pred_dir}")
+    log(f"  교차검증 예측(공통 형식) {len(written)}개 → {rel(pred_dir)}")
     return written
 
 
@@ -269,7 +269,7 @@ def main():
         fold_check = pd.concat([fold_defect_check(lab, cfg).assign(mold=p) for p, lab in sep_frames.items()],
                                ignore_index=True)
         fold_check.to_csv(tab_dir / "fold_defect_check.csv", index=False, encoding="utf-8-sig")
-        log(f"  분할표 저장: {out / 'fold_id.csv'} ({len(fold_id)}행)")
+        log(f"  분할표 저장: {rel(out / 'fold_id.csv')} ({len(fold_id)}행)")
     else:
         fold_check = pd.DataFrame()
 
@@ -470,7 +470,7 @@ def main():
     (out / "run_log.txt").write_text("\n".join(log_lines), encoding="utf-8")
     report.write(out / "report.md", cfg, audit, dropped, table, ci, choices, final_summ, err, type_tab,
                  manifest, holdout_info, fold_check=fold_check, ablation=ablation, exp=exp_tables)
-    log(f"완료: {out/'report.md'}  ({manifest['runtime_sec']}s)")
+    log(f"완료: {rel(out / 'report.md')}  ({manifest['runtime_sec']}s)")
 
 
 if __name__ == "__main__":

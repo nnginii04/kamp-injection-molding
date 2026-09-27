@@ -39,6 +39,17 @@ def _s(v) -> str:
     return "-" if v is None or (isinstance(v, float) and np.isnan(v)) or str(v) == "nan" else str(v)
 
 
+def short_path(p, base=None) -> str:
+    """결과 파일에 로컬 절대경로가 남지 않게: base 기준 상대경로, 안 되면 파일 이름."""
+    p = Path(p)
+    if base is not None:
+        try:
+            return p.resolve().relative_to(Path(base).resolve()).as_posix()
+        except ValueError:
+            pass
+    return p.name
+
+
 def lift_text(v) -> str:
     """PR-AUC ÷ 불량률 배수. 계산할 수 없으면(불량 0 등) '-'."""
     return "-" if v is None or pd.isna(v) else f"{v:.1f}x"
@@ -147,7 +158,7 @@ def save_experiment_result(pred_dir="outputs/predictions", out_dir="outputs/eval
             if n_split:
                 notes.append(f"{path.name}: LH/RH 짝이 서로 다른 fold로 나뉜 경우가 있음(최대 {n_split}샷) → 같은 입력이 "
                              "학습·검증에 동시에 들어가 성능이 부풀려질 수 있음. shot_id로 묶어 나누기(StratifiedGroupKFold) 권장")
-            mani.append({"file": str(path), "sha256": sha256(path), "rows": int(len(df)),
+            mani.append({"file": short_path(path, out_dir.parent), "sha256": sha256(path), "rows": int(len(df)),
                          "columns": [str(c) for c in df.columns if c != "source_file"]})
     for w in caught:
         msg = str(w.message)
@@ -170,7 +181,7 @@ def save_experiment_result(pred_dir="outputs/predictions", out_dir="outputs/eval
     manifest = {"created": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                 "settings": {"levels": list(levels), "ks": list(ks), "threshold": threshold, "budget": budget,
                              "thresholds": [float(t) for t in thresholds], "budgets": list(budgets),
-                             "run_col": run_col, "shot_map": str(shot_map) if shot_map is not None else None},
+                             "run_col": run_col, "shot_map": short_path(shot_map, out_dir.parent) if shot_map is not None else None},
                 "versions": {"python": platform.python_version(), "numpy": np.__version__,
                              "pandas": pd.__version__, "scikit-learn": sklearn.__version__},
                 "inputs": mani, "skipped_files": skipped, "notes": notes}
@@ -178,7 +189,8 @@ def save_experiment_result(pred_dir="outputs/predictions", out_dir="outputs/eval
                                                       encoding="utf-8")
     summary.attrs["skipped_files"], summary.attrs["notes"] = skipped, notes
     if verbose:
-        print(f"[평가] 예측 파일 {len(paths)}개 → {out_dir / 'experiment_summary.csv'} ({len(summary)}줄)")
+        print(f"[평가] 예측 파일 {len(paths)}개 → {short_path(out_dir / 'experiment_summary.csv', out_dir.parent)} "
+              f"({len(summary)}줄)")
         for n in notes:
             print("  ! " + n)
     return summary

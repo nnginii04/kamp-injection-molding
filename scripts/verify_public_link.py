@@ -137,15 +137,15 @@ def main():
         comp_unl[p] = pd.read_csv(data_dir / files["unlabeled"]).rename(columns={id_col: "row_id"})
     feats = [c for c in comp_lab[next(iter(comp_lab))].columns if c not in ("row_id", label_col)]
 
-    print(f"공개 원본 읽기(읽기 전용): {src}")
+    print(f"공개 원본 읽기(읽기 전용): {src.name}")
     pub_lab = _public.read_csv(src, "moldset_labeled.csv", usecols=META + ["PassOrFail", "Reason"] + feats)
     pub_unl = _public.read_csv(src, "unlabeled_data.csv", usecols=META + feats)
     print(f"  moldset_labeled.csv {len(pub_lab):,}행, unlabeled_data.csv {len(pub_unl):,}행")
 
-    summary = {"public_source": str(src), "note": "해석·검증 전용. 모델 입력 금지.", "products": {}}
+    summary = {"public_source": src.name, "note": "해석·검증 전용. 모델 입력 금지.", "products": {}}
     R = ["# 공개 원본 연결 검증 (자동 생성)", "",
          "> ⚠ 해석·검증 전용입니다. 공개 원본은 대회 규정 확인 전까지 모델 입력으로 쓰지 않습니다.", "",
-         f"- 원본: `{src}` (읽기 전용)",
+         f"- 원본: `{src.name}` (읽기 전용, 경로는 config.external.public_path)",
          f"- 허용 오차: (1) 대회 파일 ↔ 자기 원본 연결은 표준화 재현 |Δz| ≤ {Z_TOL:g}. "
          f"(2) labeled ↔ unlabeled 겹침은 허용 오차 없이 소수 {OVERLAP_ROUND}자리 반올림 값의 완전 일치", ""]
     link_rows, flag_rows = [], []
@@ -241,7 +241,7 @@ def main():
     if old.exists():
         old.unlink()
     print("\n".join(R))
-    print(f"\n저장: {out}")
+    print(f"\n저장: {out.relative_to(ROOT) if out.is_relative_to(ROOT) else out.name}")
     return 0
 
 

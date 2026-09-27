@@ -313,7 +313,7 @@ def main():
     (out / "scale_params.json").write_text(json.dumps(scale, ensure_ascii=False, indent=1), encoding="utf-8")
     R.insert(2, "\n".join(f"- {x}" for x in lines) + "\n")
     (out / "link_report.md").write_text("\n".join(R), encoding="utf-8")
-    log(f"완료: {out / 'link_report.md'}")
+    log(f"완료: {(out / 'link_report.md').relative_to(ROOT) if out.is_relative_to(ROOT) else 'link_report.md'}")
 
 
 if __name__ == "__main__":

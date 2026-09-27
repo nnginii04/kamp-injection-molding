@@ -48,6 +48,13 @@ def resolve(p) -> Path:
     return p if p.is_absolute() else ROOT / p
 
 
+def rel(p) -> str:
+    try:
+        return Path(p).resolve().relative_to(ROOT).as_posix()
+    except ValueError:
+        return Path(p).name
+
+
 def crosscheck(summ: pd.DataFrame, cv_summary: Path, out_dir: Path, custom_rule: bool) -> pd.DataFrame | None:
     """pipeline_*.csv 평가 결과 ↔ run_all.py 가 report.md 에 쓴 수치(cv_summary.csv) 비교."""
     if not cv_summary.exists():
@@ -107,7 +114,7 @@ def main() -> int:
     print(f"판정 기준(F1·FN·FP): {rule_txt}")
     print("평가 대상:")
     for f in files:
-        print("  -", f.relative_to(ROOT) if f.is_relative_to(ROOT) else f)
+        print("  -", rel(f))
     shot_map = out_root / "predictions_labeled_cv.csv"
     summ = save_experiment_result(files=files, out_dir=out_dir, threshold=args.threshold, budget=args.budget,
                                   levels=tuple(x.strip() for x in args.levels.split(",") if x.strip()),
@@ -138,7 +145,7 @@ def main() -> int:
             print(view.to_string(index=False))
     for n in summ.attrs.get("notes", []):
         print("  ! " + n)
-    print(f"\n자세한 표: {out_dir / 'experiment_summary.md'}")
+    print(f"\n자세한 표: {rel(out_dir / 'experiment_summary.md')}")
 
     cc = crosscheck(summ, out_root / "tables" / "cv_summary.csv", out_dir,
                     custom_rule=args.threshold is not None or args.budget is not None)
@@ -146,7 +153,7 @@ def main() -> int:
         mx = float(cc.abs_diff.max())
         ok = mx < 1e-9
         print(f"\n[검산] run_all.py report 수치(cv_summary.csv) vs run_evaluation: {len(cc)}개 값 비교, "
-              f"최대 차이 {mx:.2e} → {'일치' if ok else '불일치 — crosscheck.csv 확인'}  ({out_dir / 'crosscheck.csv'})")
+              f"최대 차이 {mx:.2e} → {'일치' if ok else '불일치 — crosscheck.csv 확인'}  ({rel(out_dir / 'crosscheck.csv')})")
         if not ok:
             return 1
     return 0
