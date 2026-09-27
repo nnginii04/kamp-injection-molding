@@ -22,7 +22,8 @@ class TestOutputs(unittest.TestCase):
 
     def test_prediction_files_have_mold_and_uncertainty(self):
         for d in DIRS:
-            for name in ("predictions_labeled_cv.csv", "predictions_unlabeled.csv", "predictions_holdout.csv"):
+            for name in ("predictions_labeled_cv.csv", "predictions_unlabeled/predictions_unlabeled.csv",
+                         "predictions_holdout.csv"):
                 f = d / name
                 if not f.exists():
                     continue
@@ -36,8 +37,8 @@ class TestOutputs(unittest.TestCase):
     def test_unlabeled_overlap_flag_and_meta(self):
         for d in DIRS:
             cols = ["in_labeled_train_row", "in_labeled_train_shot"]
-            t = pd.read_csv(d / "predictions_unlabeled.csv", usecols=["mold", *cols])
-            meta = json.loads((d / "predictions_unlabeled_meta.json").read_text(encoding="utf-8"))
+            t = pd.read_csv(d / "predictions_unlabeled" / "predictions_unlabeled.csv", usecols=["mold", *cols])
+            meta = json.loads((d / "predictions_unlabeled" / "predictions_unlabeled_meta.json").read_text(encoding="utf-8"))
             self.assertTrue(any("labeled 행이 들어 있음" in w for w in meta["warnings"]))
             self.assertTrue(any("과소평가" in w for w in meta["warnings"]))
             cfg = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
@@ -90,6 +91,19 @@ class TestOutputs(unittest.TestCase):
         if "0" in c.index:
             self.assertAlmostEqual(c.loc["1", "row_ap"], c.loc["0", "row_ap"], places=6,
                                    msg="v0 설정 재현값이 archive 보고값과 다름")
+
+    def test_pipeline_predictions_common_format(self):
+        cols = ["mold", "product", "model", "cv_mode", "repeat", "fold", "row_id", "shot_id", "y_true", "y_score",
+                "y_pred"]
+        for d in DIRS:
+            files = sorted((d / "predictions").glob("pipeline_*.csv"))
+            self.assertTrue(files, f"{d}/predictions 에 pipeline_*.csv 없음")
+            for f in files:
+                t = pd.read_csv(f, nrows=500)
+                with self.subTest(file=str(f)):
+                    self.assertEqual(list(t.columns), cols)
+            self.assertFalse((d / "predictions_unlabeled.csv").exists(), "unlabeled 예측이 이전 위치에 남아 있음")
+            self.assertFalse(list((d / "predictions").glob("*unlabeled*")), "unlabeled 예측이 평가 폴더에 섞임")
 
     def test_report_notes(self):
         for d in DIRS:
