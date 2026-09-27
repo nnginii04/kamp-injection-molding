@@ -20,3 +20,7 @@ venv/
 .idea/
 .vscode/
 _incoming/
+
+# 제출물 / 블라인드 검사 단어(로컬 전용)
+dist/
+.blind_words
