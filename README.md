@@ -25,6 +25,9 @@ scripts/             공개 원본 연결·검증 (해석 전용, 기본 꺼짐)
 archive/             이전 베이스라인 보관 (참고용, 실행 대상 아님)
 data/raw/            대회 CSV 4개 (git 제외)
 outputs/             실행 결과 (git 제외)
+  predictions/         교차검증 예측, 팀 공통 형식 (run_all.py 는 pipeline_<모델>.csv, 팀원 파일도 여기에)
+  predictions_unlabeled/  unlabeled 예측 + 메타데이터 (정답 없음 → 평가 대상 아님)
+  evaluation/          run_evaluation.py 결과 (cv_mode 별 표, report.md 수치 검산 crosscheck.csv)
 ```
 
 ## 팀 공유 분할표 (`outputs/fold_id.csv`)

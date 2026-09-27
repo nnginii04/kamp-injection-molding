@@ -4,7 +4,7 @@
 1) predictions_labeled_cv.csv : labeled 전 행에 대한 '교차검증 예측'(각 행을 그 행을 보지 않은 모델이 예측)
    → 정답이 있어 성능을 확인할 수 있는 테스트 예측 파일
 2) predictions_holdout.csv    : (config.holdout.enabled일 때) 처음부터 떼어 둔 테스트 블록 예측
-3) predictions_unlabeled.csv  : unlabeled 예측 + 분포 밖(OOD) 표시
+3) predictions_unlabeled/predictions_unlabeled.csv : unlabeled 예측 + 분포 밖(OOD) 표시 (정답이 없어 평가 폴더와 분리)
    ※ labeled/unlabeled가 파일별로 따로 표준화된 것으로 보이면 참고용
 
 - 최종 모델: 선택된 (시나리오, 모델)을 labeled(개발용) 전체로 재학습

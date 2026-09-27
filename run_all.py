@@ -78,6 +78,32 @@ def load_labeled_overlap(cfg, out, log) -> dict:
     return res
 
 
+PRED_COLS = ["mold", "product", "model", "cv_mode", "repeat", "fold", "row_id", "shot_id", "y_true", "y_score", "y_pred"]
+
+
+def write_pipeline_predictions(oof_all: pd.DataFrame, models: list[str], out: Path, log) -> list[Path]:
+    """교차검증 예측을 팀 공통 형식으로 outputs/predictions/pipeline_<모델>.csv 에 저장 (run_evaluation.py 가 읽음).
+    같은 폴더의 팀원 파일은 건드리지 않고, 이전 실행의 pipeline_*.csv 만 지우고 새로 쓴다."""
+    pred_dir = out / "predictions"
+    pred_dir.mkdir(parents=True, exist_ok=True)
+    for old in pred_dir.glob("pipeline_*.csv"):
+        old.unlink()
+    written = []
+    for m in models:
+        sub = oof_all[oof_all.model.eq(m)]
+        if sub.empty:
+            continue
+        name = np.where(sub.dataset.eq("pooled"), m + "@pooled", m)
+        t = pd.DataFrame({"mold": sub["product"], "product": sub["product"], "model": name, "cv_mode": sub.cv_mode,
+                          "repeat": sub.repeat, "fold": sub.fold, "row_id": sub.row_id, "shot_id": sub.shot_id,
+                          "y_true": sub.y, "y_score": sub.p, "y_pred": sub.pred})[PRED_COLS]
+        f = pred_dir / f"pipeline_{m}.csv"
+        t.to_csv(f, index=False, encoding="utf-8-sig")
+        written.append(f)
+    log(f"  교차검증 예측(공통 형식) {len(written)}개 → {pred_dir}")
+    return written
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default=str(ROOT / "config.json"))
@@ -337,7 +363,13 @@ def main():
         pu.append(u), pl.append(lpred), final_summ.append(s)
         if tpred is not None:
             pt.append(tpred)
-    pd.concat(pu, ignore_index=True).to_csv(out / "predictions_unlabeled.csv", index=False, encoding="utf-8-sig")
+    # unlabeled 예측은 정답이 없으므로 평가 폴더(predictions/)와 분리
+    unl_dir = out / "predictions_unlabeled"
+    unl_dir.mkdir(parents=True, exist_ok=True)
+    for legacy in (out / "predictions_unlabeled.csv", out / "predictions_unlabeled_meta.json"):
+        if legacy.exists():  # 이전 버전 위치의 파일 (혼동 방지)
+            legacy.unlink()
+    pd.concat(pu, ignore_index=True).to_csv(unl_dir / "predictions_unlabeled.csv", index=False, encoding="utf-8-sig")
     unl_meta = {
         "file": "predictions_unlabeled.csv",
         "warnings": [
@@ -358,12 +390,13 @@ def main():
                                    "threshold_on_score": s_["threshold_on_score"]} for s_ in final_summ},
         "source": known_facts.SOURCE,
     }
-    (out / "predictions_unlabeled_meta.json").write_text(json.dumps(unl_meta, ensure_ascii=False, indent=1,
+    (unl_dir / "predictions_unlabeled_meta.json").write_text(json.dumps(unl_meta, ensure_ascii=False, indent=1,
                                                                     default=str), encoding="utf-8")
     pd.concat(pl, ignore_index=True).to_csv(out / "predictions_labeled_cv.csv", index=False, encoding="utf-8-sig")
     if pt:
         pd.concat(pt, ignore_index=True).to_csv(out / "predictions_holdout.csv", index=False, encoding="utf-8-sig")
     oof_all.to_csv(tab_dir / "oof_predictions.csv", index=False, encoding="utf-8-sig")
+    write_pipeline_predictions(oof_all, models, out, log)
 
     manifest = {
         "run_name": cfg["run_name"], "python": platform.python_version(), "numpy": np.__version__,

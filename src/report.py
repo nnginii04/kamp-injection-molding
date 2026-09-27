@@ -376,12 +376,16 @@ def write(path, cfg, audit, dropped, table, ci, choices, final_summ, err, type_t
     L.append("- `predictions_labeled_cv.csv`: labeled 전 행의 교차검증 예측 (정답 포함 → 테스트 예측 파일로 사용 가능)")
     if holdout_info:
         L.append("- `predictions_holdout.csv`: 처음부터 떼어 둔 홀드아웃 블록 예측과 성능(위 표 test_*)")
-    L.append("- `predictions_unlabeled.csv`: unlabeled 예측. `in_labeled_range`=False인 행은 학습 범위 밖 → 신뢰도 낮음")
+    L.append("- `predictions/pipeline_<모델>.csv`: 모든 모델의 교차검증 예측을 팀 공통 형식"
+             "(mold, product, model, cv_mode, repeat, fold, row_id, shot_id, y_true, y_score, y_pred)으로 저장 → "
+             "`python run_evaluation.py` 로 같은 기준 채점·검산")
+    L.append("- `predictions_unlabeled/predictions_unlabeled.csv`: unlabeled 예측 (정답이 없어 평가 폴더와 분리). "
+             "`in_labeled_range`=False인 행은 학습 범위 밖 → 신뢰도 낮음")
     L.append(f"  - ⚠ 대회 unlabeled 안에 labeled 행이 들어 있음 ({known_facts.overlap_text()}). "
              "`in_labeled_train_row`(행 자체) / `in_labeled_train_shot`(같은 shot 의 짝 포함)=True 행은 학습에 쓰인 행이라 "
              "uncertainty 가 과소평가될 수 있음. "
              "대회 파일만으로는 판정할 수 없어 기본값은 NaN (external.enabled=true + 검증 결과가 있을 때만 채움). "
-             "자세한 경고는 `predictions_unlabeled_meta.json`")
+             "자세한 경고는 `predictions_unlabeled/predictions_unlabeled_meta.json`")
     if any(a["scale_check"]["both_files_mean0_std1"] and a["scale_check"]["value_overlap_mean"] < 0.5 for a in audit.values()):
         L.append("  - ⚠ labeled/unlabeled가 파일별로 따로 표준화된 것으로 보임 → unlabeled 예측은 참고용")
     for p in cfg.get("experiments", {}).get("threshold_products", []):
