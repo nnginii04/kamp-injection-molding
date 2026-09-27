@@ -1,11 +1,13 @@
 """대회 제출용 zip 만들기 + 블라인드 검사(개인정보 문자열이 없는지).
 
-    python scripts/make_submission.py                       # dist/submission.zip
+    python scripts/make_submission.py                       # dist/submission.zip (학습 데이터 포함 — 대회 요건)
     python scripts/make_submission.py --out dist/v1.zip
-    python scripts/make_submission.py --include-data        # data/raw 대회 CSV 포함 (대회 공지로 필요 여부 확인)
+    python scripts/make_submission.py --no-data             # data/raw 대회 CSV 빼기 (공유용)
     python scripts/make_submission.py --word 홍길동 --word 우리대학   # 검사할 단어 추가
 
-제외: .git, data/raw(기본), data/synthetic, _incoming, .venv, __pycache__, outputs/synthetic,
+대회 요건: requirements, 학습 데이터, README, 테스트 예측결과가 zip 안에 있어야 함 → 끝에 포함 여부를 점검해 출력.
+데이터: data/raw 중 config.json 의 products 에 적힌 대회 CSV 4개만 넣는다 (KAMP 공개 원본 등 다른 파일은 절대 넣지 않음).
+제외: .git, data/synthetic, _incoming, .venv, __pycache__, outputs/synthetic,
       outputs/verification(공개 원본에서 나온 결과, 기본 제외), dist, 편집기·OS 파일
 블라인드 검사 (zip 안의 모든 텍스트 파일과 파일 이름)
   - 이메일 주소, 로컬 절대경로(맥·리눅스·윈도우의 사용자 홈 폴더 경로)
@@ -16,6 +18,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -35,6 +38,15 @@ GENERIC = {  # 패턴을 조각으로 조합 — 이 파일 자체가 검사에 
                          + "|[A-Za-z]:" + _SEP + "Users" + _SEP + _NAME),
 }
 ALLOWED = {"noreply@anthropic.com"}  # 커밋 도구 서명 등 개인정보가 아닌 주소
+PUBLIC_NAMES = {"labeled_data.csv", "unlabeled_data.csv", "moldset_labeled.csv", "supervised_label_cn7.csv"}
+REQUIRED = {  # 대회 제출 요건 → zip 안에 있어야 할 것
+    "requirements": ["requirements.txt"],
+    "README": ["README.md"],
+    "테스트 예측결과": ["outputs/predictions_labeled_cv.csv"],
+    "교차검증 예측(공통 형식)": ["outputs/predictions/pipeline_*.csv"],
+    "unlabeled 예측": ["outputs/predictions_unlabeled/predictions_unlabeled.csv",
+                     "outputs/predictions_unlabeled/predictions_unlabeled_meta.json"],
+}
 
 
 def git_identity() -> list[str]:
@@ -59,7 +71,13 @@ def blind_words(extra) -> list[str]:
     return sorted({w for w in words if len(w) >= 2}, key=str.lower)
 
 
+def competition_files() -> set[str]:
+    cfg = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
+    return {f"{cfg['data_dir']}/{f[k]}" for f in cfg["products"].values() for k in ("labeled", "unlabeled")}
+
+
 def collect(include_data: bool, include_verification: bool) -> list[Path]:
+    allowed_data = competition_files() if include_data else set()
     skip_paths = set(EXCLUDE_PATHS)
     if include_verification:
         skip_paths.discard("outputs/verification")
@@ -72,7 +90,9 @@ def collect(include_data: bool, include_verification: bool) -> list[Path]:
         s = rel.as_posix()
         if any(s == d or s.startswith(d + "/") for d in skip_paths):
             continue
-        if not include_data and s.startswith("data/raw/") and p.name != ".gitkeep":
+        if s.startswith("data/") and p.name != ".gitkeep" and s not in allowed_data:
+            continue  # 대회 CSV 4개 말고는 data/ 아래 어떤 파일도 넣지 않음 (공개 원본 차단)
+        if p.name in PUBLIC_NAMES:
             continue
         if p.name in EXCLUDE_FILES or p.suffix in EXCLUDE_SUFFIX:
             continue
@@ -103,7 +123,7 @@ def scan(name: str, data: bytes, words: list[str]) -> list[tuple[str, str]]:
 def main() -> int:
     ap = argparse.ArgumentParser(description="제출용 zip + 블라인드 검사")
     ap.add_argument("--out", default="dist/submission.zip")
-    ap.add_argument("--include-data", action="store_true", help="data/raw 의 대회 CSV 포함")
+    ap.add_argument("--no-data", action="store_true", help="data/raw 의 대회 CSV 를 빼기 (기본은 포함 — 대회 요건)")
     ap.add_argument("--include-verification", action="store_true", help="outputs/verification 포함 (공개 원본 유래)")
     ap.add_argument("--word", action="append", help="추가로 검사할 단어 (여러 번 가능)")
     args = ap.parse_args()
@@ -111,7 +131,7 @@ def main() -> int:
     out = out if out.is_absolute() else ROOT / out
     out.parent.mkdir(parents=True, exist_ok=True)
     words = blind_words(args.word)
-    files = collect(args.include_data, args.include_verification)
+    files = collect(not args.no_data, args.include_verification)
     problems = []
     with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as z:
         for f in files:
@@ -120,8 +140,24 @@ def main() -> int:
             z.writestr(zipfile.ZipInfo(arc, date_time=(2026, 1, 1, 0, 0, 0)), data, zipfile.ZIP_DEFLATED)
             problems += [(arc, k, v) for k, v in scan(arc, data, words)]
     size = out.stat().st_size / 2 ** 20
-    print(f"zip: {out.relative_to(ROOT) if out.is_relative_to(ROOT) else out.name} — 파일 {len(files)}개, {size:.1f} MB")
-    print(f"  data/raw 포함: {'예' if args.include_data else '아니오'}  (대회 공지의 '학습 데이터 포함' 여부를 확인하세요)")
+    raw = sum(f.stat().st_size for f in files) / 2 ** 20
+    names = [f.relative_to(ROOT).as_posix() for f in files]
+    print(f"zip: {out.relative_to(ROOT) if out.is_relative_to(ROOT) else out.name} — 파일 {len(files)}개, "
+          f"압축 {size:.1f} MB (원본 합계 {raw:.1f} MB)")
+    data_in = sorted(n for n in names if n.startswith("data/") and not n.endswith(".gitkeep"))
+    print(f"  학습 데이터: {len(data_in)}개 {[Path(n).name for n in data_in]}" + ("  (--no-data)" if args.no_data else ""))
+    leaked = [n for n in names if Path(n).name in PUBLIC_NAMES]
+    if leaked:
+        problems += [(n, "공개 원본", Path(n).name) for n in leaked]
+    print("  제출 요건 점검:")
+    for label, pats in REQUIRED.items():
+        found = [n for pat in pats for n in names if Path(n).match(pat)]
+        ok = all(any(Path(n).match(pat) for n in names) for pat in pats)
+        print(f"    [{'O' if ok else 'X'}] {label}: {len(found)}개" + ("" if ok else f" — 없음: {pats}"))
+        if not ok:
+            problems.append((label, "제출 요건 누락", ", ".join(pats)))
+    if not args.no_data and len(data_in) != len(competition_files()):
+        problems.append(("data/raw", "제출 요건 누락", "대회 CSV 4개가 모두 있어야 함 (data/raw 에 넣은 뒤 다시 실행)"))
     print(f"  블라인드 검사 단어 {len(words)}개 (git 설정·.blind_words·--word) + 이메일·로컬경로 패턴")
     if problems:
         print(f"\n[블라인드 검사] 문제 {len(problems)}건 — 고친 뒤 다시 실행하세요")

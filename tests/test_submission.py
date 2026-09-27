@@ -19,6 +19,12 @@ class TestSubmission(unittest.TestCase):
         self.assertIn("run_all.py", rels)
         self.assertIn("config.json", rels)
 
+    def test_data_only_competition_csvs(self):
+        rels = [p.relative_to(ROOT).as_posix() for p in ms.collect(include_data=True, include_verification=False)]
+        data = sorted(r for r in rels if r.startswith("data/") and not r.endswith(".gitkeep"))
+        self.assertTrue(set(data) <= ms.competition_files(), data)
+        self.assertFalse([r for r in rels if r.split("/")[-1] in ms.PUBLIC_NAMES])
+
     def test_scan_detects_personal_strings(self):
         home = "/" + "Users" + "/" + "someone/x.csv"
         win = "C:" + "\\" + "Users" + "\\" + "someone" + "\\" + "a"

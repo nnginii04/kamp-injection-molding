@@ -65,22 +65,28 @@ def _cols(t, keep):
 BUDGETS_MAIN = (0.02, 0.05, 0.10)
 
 
-def _range(table, dataset, model, product, col):
+MODE_HEAD = {"block": "block CV (비관)", "shot": "shot CV (낙관)"}
+
+
+def _val(table, dataset, model, product, col, mode):
     t = table[(table.dataset == dataset) & (table.model == model) & (table["product"] == product)].set_index("cv_mode")
-    b, s = t[col].get("block", np.nan), t[col].get("shot", np.nan)
-    return f"{b:.2f} ~ {s:.2f}"
+    v = t[col].get(mode, np.nan)
+    return "-" if pd.isna(v) else f"{v:.2f}"
 
 
 def summary_table(table, choices) -> pd.DataFrame:
+    """한 장 요약 표: 지표마다 block CV(비관)·shot CV(낙관) 열을 나란히 (어느 쪽이 높아도 헷갈리지 않게)."""
+    metrics = [(f"재현율@{b:.0%}", f"row_recall@{int(b * 100)}%", f"{b:.2f}") for b in BUDGETS_MAIN]
+    metrics.append(("shot AP", "shot_ap", "≈불량률"))
     rows = []
     for p, c in choices.items():
         r = {"제품": p.upper(), "모델": c["model"], "신호": "있음" if c["beats_chance"] else "없음(기준선 수준)"}
-        for b in BUDGETS_MAIN:
-            r[f"재현율@{b:.0%} (block~shot)"] = _range(table, c["dataset"], c["model"], p, f"row_recall@{int(b * 100)}%")
-        r["shot AP (block~shot)"] = _range(table, c["dataset"], c["model"], p, "shot_ap")
+        for name, col, _ in metrics:
+            for mode in ("block", "shot"):
+                r[f"{name} {MODE_HEAD[mode]}"] = _val(table, c["dataset"], c["model"], p, col, mode)
         rows.append(r)
     rows.append({"제품": "무작위 검사", "모델": "-", "신호": "-",
-                 **{f"재현율@{b:.0%} (block~shot)": f"{b:.2f}" for b in BUDGETS_MAIN}, "shot AP (block~shot)": "≈불량률"})
+                 **{f"{name} {MODE_HEAD[mode]}": rnd for name, _, rnd in metrics for mode in ("block", "shot")}})
     return pd.DataFrame(rows)
 
 
@@ -102,7 +108,8 @@ def write(path, cfg, audit, dropped, table, ci, choices, final_summ, err, type_t
     L.append("- **문제**: 사출 공정값(표준화된 23개 변수)만으로 불량(PassOrFail=1)을 미리 찾아 검사 우선순위를 정한다. "
              + ", ".join(f"{p.upper()} {n:,}행 중 불량 {k}행" for p, (n, k) in tot.items()) + ".")
     L.append("- **대표 지표 = 검사비율별 재현율** ('점수 상위 k% 만 검사하면 불량을 몇 % 잡는가'). "
-             "처음 보는 생산 구간을 가정한 **block CV(비관)** ~ 같은 구간 안을 가정한 **shot CV(낙관)** 범위로 제시.\n")
+             "처음 보는 생산 구간을 가정한 **block CV(비관)** 와 같은 구간 안을 가정한 **shot CV(낙관)** 를 나란히 제시 "
+             "(신호가 없는 제품은 흔들림 때문에 block 쪽이 더 높게 나오기도 함).\n")
     L.append(md(summary_table(table, choices)))
     L.append("\n**핵심 발견**\n")
     L.append("1. 공정값이 똑같은 두 행 = 한 번 사출(shot)의 LH/RH 두 제품. 짝 한쪽만 불량인 경우가 대부분이라 "

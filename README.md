@@ -57,18 +57,39 @@ outputs/             실행 결과 (git 제외)
 
 추가 발견: 공정변수는 **shot 전체 이상(짝 둘 다 불량)은 잡지만 캐비티 국소 불량(한쪽만 불량)은 못 잡습니다** (CN7 block CV 에서 잡힌 불량 = 둘 다 불량인 3 shot 6행뿐). 근거가 연속된 3 shot 뿐이라는 한계가 있습니다.
 
-## 결과 요약 (대표 지표 = 검사비율별 재현율, block CV(비관) ~ shot CV(낙관))
+## 결과 요약 (대표 지표 = 검사비율별 재현율)
 
-| 제품 | 모델 | 상위 2% 검사 | 상위 5% | 상위 10% | shot AP | 비고 |
-|---|---|---|---|---|---|---|
-| CN7 | 로지스틱 회귀 (balanced) | 0.35 ~ 0.46 | 0.35 ~ 0.56 | 0.49 ~ 0.73 | 0.19 ~ 0.35 | 무작위 기준선의 약 9배 (block shot AP) |
-| RG3 | LightGBM | 0.03 ~ 0.00 | 0.07 ~ 0.04 | 0.13 ~ 0.08 | 0.05 ~ 0.04 | 신호 없음 (기준선 수준) |
-| 무작위 검사 | - | 0.02 | 0.05 | 0.10 | ≈ 불량률 | |
+block CV = 처음 보는 생산 구간을 가정(비관), shot CV = 같은 구간 안을 가정(낙관). 실제 성능은 둘 사이로 봅니다.
 
+| 지표 | CN7 block CV (비관) | CN7 shot CV (낙관) | RG3 block CV (비관) | RG3 shot CV (낙관) | 무작위 검사 |
+|---|---|---|---|---|---|
+| 상위 2% 검사 시 재현율 | 0.35 | 0.46 | 0.03 | 0.00 | 0.02 |
+| 상위 5% 검사 시 재현율 | 0.35 | 0.56 | 0.07 | 0.04 | 0.05 |
+| 상위 10% 검사 시 재현율 | 0.49 | 0.73 | 0.13 | 0.08 | 0.10 |
+| shot 단위 AP | 0.19 | 0.35 | 0.05 | 0.04 | ≈ 불량률 |
+
+- CN7 모델 = 로지스틱 회귀(class_weight balanced), 무작위 기준선의 약 9배(block shot AP). RG3 모델 = LightGBM 이지만 **신호 없음**(기준선 수준 — block 이 더 높게 나온 것은 흔들림).
 - 모델 선택: block CV · shot 단위 AP · 1-SE 규칙(비슷하면 단순한 모델). Accuracy 는 쓰지 않음.
 - 이전 베이스라인의 CN7 PR-AUC 0.476 은 v0 설정을 그대로 재현하면 정확히 같게 나오고, 검증 조건(block CV)과
   모델 설정 변경으로 이번 0.24(block) ~ 0.36(shot)이 됨 (report.md 5-5).
 - 현장 제안: 공정 데이터 모델은 **shot 전체 이상 선별**에, 캐비티 국소 불량은 금형·비전 검사 등 **별도 수단**으로.
+
+## 제출물 구성 (`python scripts/make_submission.py` → `dist/submission.zip`)
+
+대회 요건(requirements, 학습 데이터, README, 테스트 예측결과)을 스크립트가 점검하고, 블라인드 검사(이름·이메일·로컬 경로)도 함께 합니다.
+
+| 구분 | zip 안의 파일 |
+|---|---|
+| 실행·설명 | `README.md`, `requirements.txt`, `config.json`, `run_all.py`, `run_evaluation.py`, `src/`, `evaluation/`, `scripts/`, `tests/`, `notebooks/baseline_explained.ipynb` |
+| 학습 데이터 | `data/raw/` 의 대회 CSV 4개 (`moldset_labeled_cn7/rg3.csv`, `moldset_unlabeled_cn7/rg3.csv`). KAMP 공개 원본은 넣지 않음 |
+| 테스트 예측결과 | `outputs/predictions_labeled_cv.csv` (labeled 전 행의 교차검증 예측 = 테스트 예측), `outputs/predictions/pipeline_*.csv` (모델 8개의 교차검증 예측, 팀 공통 형식) |
+| unlabeled 예측 | `outputs/predictions_unlabeled/predictions_unlabeled.csv` + `predictions_unlabeled_meta.json` (점수는 순위 용도, labeled 행 포함 가능성 경고) |
+| 결과·근거 | `outputs/report.md`, `outputs/figures/`, `outputs/tables/`, `outputs/evaluation/`, `outputs/fold_id.csv`, `outputs/manifest.json`, `outputs/audit.json`, `outputs/run_log.txt` |
+| 참고 | `archive/baseline_v0/` (이전 베이스라인, 실행 대상 아님) |
+| 제외 | `.git`, `_incoming/`, `.venv`, 캐시, `outputs/synthetic/`, `outputs/verification/`(공개 원본 유래), `dist/`, `.blind_words` |
+
+- 학습 데이터를 빼고 공유할 때: `python scripts/make_submission.py --no-data`
+- zip 을 풀어서 바로 `pip install -r requirements.txt` → `python run_all.py` 로 재현됩니다.
 
 ## 누수 체크리스트 (모두 `tests/` 로 자동 검사)
 
@@ -98,7 +119,7 @@ outputs/             실행 결과 (git 제외)
 - **커밋 메시지**: `종류: 한국어 요약` — 종류는 `feat`(기능) / `fix`(버그·정확성) / `docs`(문서) / `exp`(실험) / `chore`(정리) / `refactor` / `test`.
 - **줄바꿈**: `.gitattributes` 로 LF 통일 (Windows 팀원도 그대로 커밋하면 됨).
 - **데이터·결과**: `data/raw/`, `outputs/`, `_incoming/` 은 git 에 올리지 않음.
-- **블라인드 평가**: 파일·결과물에 이름·학교·로컬 경로를 넣지 않음. 제출 전 `python scripts/make_submission.py` 로 zip 을 만들고 검사 결과가 '통과'인지 확인
+- **블라인드 평가**: 파일·결과물에 이름·학교·로컬 경로를 넣지 않음. 제출 전 `python scripts/make_submission.py` 로 zip 을 만들고 블라인드 검사·제출 요건 점검이 모두 통과인지 확인
   (검사할 이름은 저장소 밖 로컬 파일 `.blind_words` 에 한 줄씩 — git 에 올리지 않음).
 
 ## 외부 데이터 주의
