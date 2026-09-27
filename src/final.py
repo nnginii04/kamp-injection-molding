@@ -44,6 +44,11 @@ def platt_splits(y, groups):
     return list(StratifiedGroupKFold(n_splits, shuffle=True, random_state=0).split(np.zeros(len(y)), y, groups))
 
 
+# unlabeled 예측 파일 형식 (outputs/predictions_unlabeled/predictions_unlabeled.csv)
+UNLABELED_COLS = ["mold", "row_id", "score", "rank", "risk_tier", "uncertainty", "in_labeled_range",
+                  "in_labeled_train_row", "in_labeled_train_shot"]
+
+
 def fit_platt(score, y, groups):
     s, y = _logit(score), np.asarray(y)
     cal = LogisticRegression(C=1e6, max_iter=1000).fit(s, y)
@@ -128,7 +133,7 @@ def train_and_predict(product, choice, frames, feats_by, oof_all, metrics, cfg, 
     # (예: CN7 logreg가 labeled의 39%, unlabeled의 45%를 불량으로 판정) → 기본값은 '검사 비율' 기준.
     # 교차검증 점수 분포의 상위 budget 분위수를 점수 임계값으로 삼는다 (실시간으로 샷마다 바로 판정 가능).
     dcfg = cfg.get("decision", {"rule": "f1"})
-    rt = cfg["risk_tiers"]
+    tiers = sorted(cfg["risk_tiers"])  # 예: [0.02, 0.05, 0.10]
     if dcfg.get("rule") == "budget":
         thr = float(np.quantile(om.p, 1 - dcfg.get("budget", 0.02)))
         rule_txt = f"교차검증 점수 상위 {dcfg.get('budget', 0.02):.0%} 분위수"
@@ -138,8 +143,6 @@ def train_and_predict(product, choice, frames, feats_by, oof_all, metrics, cfg, 
                             & (metrics["product"].isin([product, "all"]))].thr_median.median())
         rule_txt = "학습 fold 내부 F1 최적 임계값의 중앙값"
         cv_pred = (om.vote >= 0.5).astype(int)
-    t_now = float(np.quantile(om.p, 1 - rt["inspect_now_top"]))
-    t_pri = float(np.quantile(om.p, 1 - rt["priority_top"]))
     lab_pred = pd.DataFrame({"mold": product, "product": product, "row_id": om.row_id, "shot_id": om.shot_id,
                              "defect_type": om.shot_id.map(types).fillna("normal"), "y": om.y,
                              "cv_risk_score": om.p, "cv_defect_prob": cv_cal_p,
@@ -185,9 +188,14 @@ def train_and_predict(product, choice, frames, feats_by, oof_all, metrics, cfg, 
     s, prob = _score(target)
     target["risk_score"], target["defect_prob"] = s, prob
     target["pred_label"] = (s >= thr).astype(int)
-    target["priority_rank"] = target["risk_score"].rank(ascending=False, method="first").astype(int)
-    # 등급도 학습(교차검증) 점수 분포 기준 임계값으로 → 새 데이터의 분포가 달라지면 등급 비율도 달라짐(드리프트 신호)
-    target["risk_tier"] = np.where(s >= t_now, "즉시검사", np.where(s >= t_pri, "우선검사", "일반"))
+    # 위험 등급 = 이 파일(제품) 안에서의 점수 순위 기준. labeled/unlabeled 가 파일별로 따로 표준화돼 점수의 절대값은
+    # 학습 때와 눈금이 다를 수 있으므로, 절대 임계값이 아니라 순위(상위 k%)로만 나눈다.
+    target["rank"] = target["risk_score"].rank(ascending=False, method="first").astype(int)
+    n_t = len(target)
+    tier = pd.Series("그 외", index=target.index)
+    for k in sorted(tiers, reverse=True):
+        tier[target["rank"] <= int(np.ceil(n_t * k))] = f"상위 {k:.0%}"
+    target["risk_tier"] = tier
     base_feats = [c for c in feats if c != "is_rg3"]
     target["out_of_range_features"] = out_of_range(lab[lab["product"] == product], target, base_feats)
     target["in_labeled_range"] = target["out_of_range_features"].eq(0)
@@ -204,12 +212,10 @@ def train_and_predict(product, choice, frames, feats_by, oof_all, metrics, cfg, 
     summary = {"product": product, "scenario": scenario, "model": model_name, "cv_mode": mode,
                "decision_rule": rule_txt, "threshold_on_score": thr,
                "labeled_cv_flag_rate": float(cv_pred.mean()),
-               "unlabeled_share_즉시검사": float((target.risk_tier == "즉시검사").mean()),
-               "unlabeled_share_우선검사": float((target.risk_tier == "우선검사").mean()),
+               "unlabeled_share_above_cv_threshold": float(target.pred_label.mean()),
                "calibrated_brier_cv": float(np.mean((cv_cal_p - om.y) ** 2)),
                "brier_if_constant_rate": base_rate * (1 - base_rate),
-               "unlabeled_rows": len(target), "unlabeled_pred_positive_rate": float(target.pred_label.mean()),
-               "unlabeled_mean_defect_prob": float(target.defect_prob.mean()),
+               "unlabeled_rows": len(target),
                "labeled_defect_rate": base_rate,
                "unlabeled_in_labeled_range_share": float(target.in_labeled_range.mean()),
                "uncertainty_fold_models": n_fold_models, "fold_model_oof_max_diff": max_diff,
@@ -218,7 +224,5 @@ def train_and_predict(product, choice, frames, feats_by, oof_all, metrics, cfg, 
                "unlabeled_in_labeled_train_shot": (int(target.in_labeled_train_shot.sum())
                                                    if labeled_overlap is not None else None),
                **test_metrics}
-    cols = ["mold", "product", "row_id", "defect_prob", "pred_label", "priority_rank", "risk_tier", "risk_score",
-            "uncertainty", "uncertainty_n", "out_of_range_features", "in_labeled_range",
-            "in_labeled_train_row", "in_labeled_train_shot"]
-    return target[cols].sort_values("row_id"), lab_pred, test_pred, summary, model
+    target = target.rename(columns={"risk_score": "score"})
+    return target[UNLABELED_COLS].sort_values("row_id"), lab_pred, test_pred, summary, model

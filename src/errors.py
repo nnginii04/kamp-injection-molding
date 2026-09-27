@@ -75,8 +75,7 @@ def _timeline(product, dataset, model_name, lab, oof_all, types, cfg, fig_dir):
             if m.any():
                 ax.scatter(x[m], pct[m], s=46, color=col, edgecolors="black", linewidths=0.4,
                            label=f"{ty} ({int(m.sum())})", zorder=3)
-        for q, lab_txt in ((1 - rt["priority_top"], f"top {rt['priority_top']:.0%}"),
-                           (1 - rt["inspect_now_top"], f"top {rt['inspect_now_top']:.0%}")):
+        for q, lab_txt in ((1 - k, f"top {k:.0%}") for k in sorted(rt)):
             ax.axhline(q * 100, color="#555", lw=0.8, ls="--")
             ax.text(len(order) * 1.005, q * 100, lab_txt, fontsize=7, va="center")
         ax.set(ylabel="risk rank (pct)", ylim=(-2, 102),

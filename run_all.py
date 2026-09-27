@@ -27,11 +27,11 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 from src import audit as audit_mod  # noqa: E402
-from src import errors, evaluate, experiments, features, final, known_facts, report  # noqa: E402
+from src import errors, evaluate, experiments, features, final, key_figures, known_facts, report  # noqa: E402
 from src.cv import fold_defect_check, fold_table, make_groups, run_cv  # noqa: E402
 from src.data import assign_shots, load_all  # noqa: E402
 from src.evaluate import shot_types  # noqa: E402
-from src.models import COMPLEXITY, HAS_LGBM  # noqa: E402
+from src.models import COMPLEXITY  # noqa: E402
 from src.plots import plt, savefig  # noqa: E402
 
 
@@ -76,6 +76,47 @@ def load_labeled_overlap(cfg, out, log) -> dict:
     log(f"  in_labeled_train: 공개 원본 검증 결과 사용 ({f.name}) "
         + ", ".join(f"{p} 행 {len(v['row'])}·shot {len(v['shot'])}" for p, v in res.items()))
     return res
+
+
+def rel(p) -> str:
+    """저장소 루트 기준 상대경로 (산출물에 로컬 절대경로가 남지 않게)."""
+    p = Path(p)
+    try:
+        return str(p.resolve().relative_to(ROOT))
+    except ValueError:
+        return p.name
+
+
+def run_command(args) -> str:
+    opts = [f"--{k.replace('_', '-')}" + ("" if v is True else f" {rel(v) if k in ('config', 'data_dir') else v}")
+            for k, v in vars(args).items() if v not in (None, False) and not (k == "config" and
+                                                                              Path(v).resolve() == ROOT / "config.json")]
+    return " ".join(["python run_all.py", *opts])
+
+
+def git_commit() -> dict:
+    import subprocess
+    try:
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True)
+        dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=ROOT,
+                               capture_output=True, text=True, check=True)
+        return {"commit": head.stdout.strip(), "uncommitted_changes": bool(dirty.stdout.strip())}
+    except Exception:
+        return {"commit": None, "uncommitted_changes": None}
+
+
+def library_versions() -> dict:
+    import matplotlib
+    import scipy
+    v = {"python": platform.python_version(), "platform": platform.platform(terse=True), "numpy": np.__version__,
+         "pandas": pd.__version__, "scikit-learn": sklearn.__version__, "scipy": scipy.__version__,
+         "matplotlib": matplotlib.__version__}
+    try:
+        import lightgbm
+        v["lightgbm"] = lightgbm.__version__
+    except ImportError:
+        v["lightgbm"] = None  # HistGradientBoosting 으로 대체됨
+    return v
 
 
 PRED_COLS = ["mold", "product", "model", "cv_mode", "repeat", "fold", "row_id", "shot_id", "y_true", "y_score", "y_pred"]
@@ -218,6 +259,7 @@ def main():
 
     # 팀 공유용 분할표 + fold 수 점검 (run_cv 와 같은 cv_splits 사용)
     sep_frames = {p: frames[p][0] for p in products if p in frames}
+    fold_id = None
     if sep_frames:
         fold_id = pd.concat([fold_table(lab, cfg) for lab in sep_frames.values()], ignore_index=True)
         if holdout_info:
@@ -373,21 +415,34 @@ def main():
     unl_meta = {
         "file": "predictions_unlabeled.csv",
         "warnings": [
-            "대회 unlabeled 안에 labeled 행이 들어 있음 (공개 원본 검증: " + known_facts.overlap_text()
+            "점수는 순위 용도: labeled 와 unlabeled 는 파일별로 따로 표준화돼(같은 z값 ≠ 같은 물리값) 점수·확률의 절대값은 "
+            "학습 때와 눈금이 다를 수 있음. 제품(mold) 안의 순위(rank, risk_tier)로만 쓸 것.",
+            "labeled 행 포함 가능성: 대회 unlabeled 안에 labeled 행이 들어 있음 (공개 원본 검증: " + known_facts.overlap_text()
             + "). unlabeled 예측을 성능 평가에 쓰거나 unlabeled 로 학습(이상탐지·pseudo-label)하지 말 것.",
-            "labeled/unlabeled 는 파일별로 따로 표준화돼 같은 z값이 다른 물리값 → 점수·확률의 절대값보다 순위를 참고.",
-            "in_labeled_train_row=True 인 행은 그 행 자체가, in_labeled_train_shot=True 인 행은 공정값이 같은 짝(같은 shot)이 "
-            "최종 모델과 fold 모델의 학습에 쓰였음 → uncertainty 가 과소평가될 수 있음.",
+            "in_labeled_train_row / in_labeled_train_shot=True 인 행은 그 행 자체 또는 같은 shot 의 짝이 최종 모델·fold 모델의 "
+            "학습에 쓰였음 → uncertainty 가 과소평가될 수 있음.",
         ],
+        "columns": {
+            "mold": "제품 (cn7 / rg3)",
+            "row_id": "대회 unlabeled 파일의 Unnamed: 0",
+            "score": "최종 모델의 불량 의심 점수 (클수록 의심, 순위 용도)",
+            "rank": "제품 안에서의 점수 순위 (1 = 가장 의심)",
+            "risk_tier": "제품 안 순위 기준: " + " / ".join(f"상위 {k:.0%}" for k in sorted(cfg["risk_tiers"])) + " / 그 외",
+            "uncertainty": "선택된 CV 방식의 fold 모델 전체 예측의 표준편차 (점수 단위, ddof=1)",
+            "in_labeled_range": "모든 공정변수가 labeled(학습) 데이터의 최소~최대 범위 안이면 True (False = 학습 범위 밖, 신뢰도 낮음)",
+            "in_labeled_train_row": "이 행 자체가 labeled(학습)에 있음 (공개 원본 검증, external 꺼짐이면 NaN)",
+            "in_labeled_train_shot": "이 행 또는 같은 shot 의 짝이 labeled(학습)에 있음 (공개 원본 검증, external 꺼짐이면 NaN)",
+        },
         "in_labeled_train_criterion": known_facts.OVERLAP_CRITERION,
         "in_labeled_train": {p: ("공개 원본 검증 결과(outputs/verification/unlabeled_overlap_flags.csv)로 채움"
                                  if overlap.get(p) is not None
                                  else "NaN — 대회 파일만으로 판정 불가 (external.enabled=false 또는 검증 결과 없음)")
                              for p in products},
-        "uncertainty": "선택된 CV 방식의 fold 모델 전체(n_splits × n_repeats) 예측의 표준편차 (모델 점수 단위, ddof=1). "
-                       "uncertainty_n = 사용한 모델 수",
-        "models": {s_["product"]: {"model": s_["model"], "cv_mode": s_["cv_mode"], "decision_rule": s_["decision_rule"],
-                                   "threshold_on_score": s_["threshold_on_score"]} for s_ in final_summ},
+        "uncertainty_n_models": {s_["product"]: s_["uncertainty_fold_models"] for s_ in final_summ},
+        "models": {s_["product"]: {"model": s_["model"], "cv_mode": s_["cv_mode"],
+                                   "share_above_cv_decision_threshold": s_["unlabeled_share_above_cv_threshold"],
+                                   "in_labeled_range_share": s_["unlabeled_in_labeled_range_share"]}
+                   for s_ in final_summ},
         "source": known_facts.SOURCE,
     }
     (unl_dir / "predictions_unlabeled_meta.json").write_text(json.dumps(unl_meta, ensure_ascii=False, indent=1,
@@ -399,12 +454,18 @@ def main():
     write_pipeline_predictions(oof_all, models, out, log)
 
     manifest = {
-        "run_name": cfg["run_name"], "python": platform.python_version(), "numpy": np.__version__,
-        "pandas": pd.__version__, "sklearn": sklearn.__version__, "lightgbm": HAS_LGBM,
-        "seed": cfg["seed"], "cv": cfg["cv"], "selection": sel, "holdout": hcfg,
-        "features": {k: v for k, v in fcfg.items() if k != "iforest"}, "input_sha256": data["hashes"],
+        "run_name": cfg["run_name"], "command": run_command(args),
+        "git_commit": git_commit(),
+        "versions": library_versions(),
+        "seed": cfg["seed"], "input_sha256": data["hashes"],
+        "cv": cfg["cv"], "selection": sel, "holdout": hcfg,
+        "config": cfg,  # 실행에 쓴 설정 전체 (--fast 등으로 바뀐 값 포함)
         "runtime_sec": round(time.time() - t_start, 1),
     }
+    if sep_frames:
+        figs = key_figures.make_all(fig_dir, {p: frames[p] for p in sep_frames}, types_by_product, fold_id,
+                                    oof_all, choices, exp_tables, ablation)
+        log(f"  핵심 그림 {len(figs)}개 → {rel(fig_dir)}")
     (out / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
     (out / "run_log.txt").write_text("\n".join(log_lines), encoding="utf-8")
     report.write(out / "report.md", cfg, audit, dropped, table, ci, choices, final_summ, err, type_tab,

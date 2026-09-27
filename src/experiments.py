@@ -235,11 +235,12 @@ def perf_range(table: pd.DataFrame, choices: dict, ceil: dict) -> pd.DataFrame:
     return add_ceilings(pd.DataFrame(rows), ceil)
 
 
-def holdout_designs(frames, products, cfg) -> pd.DataFrame:
-    """holdout 후보 설계별로 holdout 에 들어가는 불량 수 (무작위 설계는 seed 여러 개)."""
+def holdout_designs(frames, products, cfg) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """holdout 후보 설계별로 holdout 에 들어가는 불량 수 (무작위 설계는 seed 여러 개).
+    반환: (설계별 요약표, 시행별 원자료 — 그림용)"""
     hc = cfg["experiments"]["holdout_sim"]
     frac, seeds, k = hc["frac"], range(hc["seeds"]), cfg["cv"].get("block_shots", 10)
-    rows = []
+    rows, trials = [], []
     for p in products:
         lab = frames[p][0].reset_index(drop=True)
         y = lab.y.to_numpy()
@@ -252,6 +253,8 @@ def holdout_designs(frames, products, cfg) -> pd.DataFrame:
         def rec(design, te_list):
             d = np.array([int(y[te].sum()) for te in te_list])
             s = np.array([lab.shot_id.iloc[te][y[te] == 1].nunique() for te in te_list])
+            trials.extend({"mold": p, "design": design, "trial": i, "holdout_defect_rows": int(v)}
+                          for i, v in enumerate(d))
             rows.append({"mold": p, "design": design, "trials": len(te_list),
                          "holdout_rows": int(np.mean([len(t) for t in te_list])),
                          "holdout_defect_rows(min/med/max)": f"{d.min()}/{int(np.median(d))}/{d.max()}",
@@ -267,7 +270,7 @@ def holdout_designs(frames, products, cfg) -> pd.DataFrame:
         rec("D. shot 단위 층화 25% (참고: 이웃 샷 차단 없음)",
             [next(StratifiedGroupKFold(n_split, shuffle=True, random_state=sd).split(y, y, lab.shot_id))[1]
              for sd in seeds])
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows), pd.DataFrame(trials)
 
 
 # 5) 이전 베이스라인 비교 ---------------------------------------------------------------------
@@ -320,6 +323,48 @@ def baseline_v0_ladder(frames, products, feats, metrics, oof_all, cfg, ceil, roo
                              "row_ap": s.row_ap, "row_ap_sd": s.row_ap_sd, "shot_ap": s.shot_ap,
                              "row_ap_foldmean": s.row_ap_foldmean})
     return add_ceilings(pd.DataFrame(rows), ceil)
+
+
+# 후보 코드(02) 누수 재현 ------------------------------------------------------------------------
+def candidate02_leak(frames, products, feats, cfg) -> pd.DataFrame:
+    """팀 후보 코드(02)의 설정을 그대로 재현해 누수 두 가지의 영향을 본다 (코드 원본은 저장소에 포함하지 않음).
+    02 설정: StandardScaler + LogisticRegression(liblinear, balanced), StratifiedGroupKFold(5, seed 42),
+             shot_id = '연속해서 공정값이 같은 행'만 묶음, X 에 position_in_shot(짝 안 기록 순서) 포함.
+    단계: (1) 02 그대로 → (2) position_in_shot 제거 → (3) shot_id 를 전역 기준으로. 지표는 pooled OOF, fold 평균은 참고."""
+    from sklearn.model_selection import StratifiedGroupKFold as SGKF
+    rows = []
+    for p in products:
+        lab = frames[p][0].sort_values("row_id").reset_index(drop=True)
+        y = lab.y.to_numpy()
+        base = [c for c in feats]
+        same_prev = lab[base].eq(lab[base].shift(1)).all(axis=1)
+        consec = (~same_prev).cumsum().to_numpy() - 1
+        pos = pd.Series(1, index=lab.index).groupby(consec).cumsum().to_numpy()   # 연속 묶음 안 순서 (1, 2)
+        glob = pd.factorize(lab.shot_id)[0]
+        steps = [("1", "02 그대로: 연속 행 묶음 + position_in_shot", consec, True),
+                 ("2", "position_in_shot 제거 (연속 행 묶음은 그대로)", consec, False),
+                 ("3", "shot_id 를 전역 기준으로 (이번 파이프라인과 같은 묶음)", glob, False)]
+        for step, change, groups, use_pos in steps:
+            X = lab[base].to_numpy(float)
+            if use_pos:
+                X = np.c_[X, pos]
+            oof, fold_ap, fold_auc = np.zeros(len(y)), [], []
+            for tr, va in SGKF(5, shuffle=True, random_state=cfg["seed"]).split(X, y, groups):
+                m = make_pipeline(StandardScaler(), LogisticRegression(class_weight="balanced", max_iter=5000,
+                                                                       solver="liblinear", random_state=cfg["seed"]))
+                m.fit(X[tr], y[tr])
+                oof[va] = m.predict_proba(X[va])[:, 1]
+                if 0 < y[va].sum() < len(va):
+                    fold_ap.append(average_precision_score(y[va], oof[va]))
+                    fold_auc.append(roc_auc_score(y[va], oof[va]))
+            split_pairs = int(pd.DataFrame({"g": groups, "s": lab.shot_id}).groupby("s").g.nunique().gt(1).sum())
+            rows.append({"product": p, "step": step, "change": change, "n_groups": int(len(np.unique(groups))),
+                         "global_pairs_split": split_pairs,
+                         "row_ap (pooled OOF)": average_precision_score(y, oof),
+                         "row_roc_auc (pooled OOF)": roc_auc_score(y, oof),
+                         "row_ap_foldmean (참고)": float(np.mean(fold_ap)),
+                         "row_roc_auc_foldmean (참고)": float(np.mean(fold_auc))})
+    return pd.DataFrame(rows)
 
 
 # 가상 선택 -----------------------------------------------------------------------------------
@@ -478,7 +523,9 @@ def run_post_selection(frames, products, feats, metrics, oof_all, table, choices
     log("  [실험 5] 이전 베이스라인 비교")
     res["exp_baseline_v0"] = baseline_v0_ladder(frames, products, feats, metrics, oof_all, cfg, ceil, root, synthetic)
     res["perf_range"] = perf_range(table, choices, ceil)
-    res["holdout_designs"] = holdout_designs(frames, products, cfg)
+    log("  [누수 재현] 후보 코드(02) 설정")
+    res["candidate02_leak"] = candidate02_leak(frames, products, feats, cfg)
+    res["holdout_designs"], res["holdout_trials"] = holdout_designs(frames, products, cfg)
     res["hypothetical_selection"] = hypothetical_selection(metrics, extra_metrics, choices, cfg["selection"],
                                                            cfg["cv"]["n_repeats"])
     fc = fold_check

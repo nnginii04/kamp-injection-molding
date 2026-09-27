@@ -1,7 +1,14 @@
-numpy>=1.26
-pandas>=2.1
-scikit-learn>=1.4
-scipy>=1.11
-matplotlib>=3.8
-lightgbm>=4.3
-jupyter
+# 실제 실행·검증에 쓴 버전 (Python 3.13.5). 같은 버전이면 결과 파일이 비트 단위로 같게 재현됨.
+# 설치: pip install -r requirements.txt
+numpy==2.5.3
+pandas==3.0.6
+scikit-learn==1.9.1
+scipy==1.18.1
+matplotlib==3.11.2
+lightgbm==4.7.0          # 없으면 sklearn HistGradientBoosting 으로 자동 대체 (결과 수치는 달라짐)
+
+# 설명 노트북(notebooks/baseline_explained.ipynb) 실행용
+jupyter==1.1.1
+ipykernel==7.3.0
+nbformat==5.11.1
+nbclient==0.11.0

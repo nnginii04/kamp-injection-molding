@@ -32,7 +32,12 @@ class TestOutputs(unittest.TestCase):
                     self.assertIn("mold", t.columns)
                     self.assertTrue(t["mold"].isin(["cn7", "rg3"]).all())
                     self.assertIn("uncertainty", t.columns)
-                    self.assertIn("uncertainty_n", t.columns)
+                    if "unlabeled" in name:
+                        from src.final import UNLABELED_COLS
+                        self.assertEqual(list(t.columns), UNLABELED_COLS)
+                        self.assertTrue(set(t.risk_tier) <= {"상위 2%", "상위 5%", "상위 10%", "그 외"})
+                    else:
+                        self.assertIn("uncertainty_n", t.columns)
 
     def test_unlabeled_overlap_flag_and_meta(self):
         for d in DIRS:
@@ -45,6 +50,7 @@ class TestOutputs(unittest.TestCase):
             if not cfg["external"]["enabled"]:
                 self.assertTrue(t[cols].isna().all().all(), "external 꺼짐인데 in_labeled_train_* 가 채워짐")
             self.assertIn("in_labeled_train_criterion", meta)
+            self.assertTrue(any("순위 용도" in w for w in meta["warnings"]))
 
     def test_fold_id_file(self):
         cfg = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
