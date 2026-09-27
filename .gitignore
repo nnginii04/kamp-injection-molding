@@ -1,8 +1,7 @@
 # data (원본은 git에 올리지 않음 — 제출 zip에만 포함)
 data/raw/*
-data/processed/*
 !data/raw/.gitkeep
-!data/processed/.gitkeep
+data/synthetic/
 
 # outputs
 outputs/*
@@ -20,3 +19,8 @@ venv/
 .DS_Store
 .idea/
 .vscode/
+_incoming/
+
+# 제출물 / 블라인드 검사 단어(로컬 전용)
+dist/
+.blind_words
