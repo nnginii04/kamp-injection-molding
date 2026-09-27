@@ -13,6 +13,9 @@ python run_all.py                   # data/raw/ 의 대회 CSV 4개 → outputs/
 python run_evaluation.py            # 팀 공통 평가 + report.md 수치 검산 → outputs/evaluation/
 ```
 
+> ⚠ `--fast` 는 반복을 2회로 줄인 **동작 확인용**입니다. 반복이 적으면 1-SE 규칙의 표준오차가 달라져 **선택 모델이 바뀔 수 있습니다**
+> (실제로 `--fast` 에서는 CN7 `ensemble`, RG3 `rf` 가 선택됨). 제출·보고 수치는 반복 5회의 전체 실행(`python run_all.py`) 기준입니다.
+
 데이터 없이 동작만 확인: `python run_all.py --synthetic --fast` (가짜 데이터, 숫자 무의미) · 누수 자동 검사: `python -m unittest discover -s tests`
 
 ## 폴더 구조
