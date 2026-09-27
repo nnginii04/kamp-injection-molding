@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from ._common import GROUP_KEYS, load_predictions, pairs_split_across_folds, sha256
+from ._common import GROUP_KEYS, MissingRequiredColumns, load_predictions, pairs_split_across_folds, sha256
 from .metrics import evaluate_model
 from .recall_at_k import DEFAULT_KS, calculate_recall_at_k
 from .threshold import DEFAULT_BUDGETS, DEFAULT_THRESHOLDS, evaluate_thresholds
@@ -39,34 +39,49 @@ def _s(v) -> str:
     return "-" if v is None or (isinstance(v, float) and np.isnan(v)) or str(v) == "nan" else str(v)
 
 
+def lift_text(v) -> str:
+    """PR-AUC ÷ 불량률 배수. 계산할 수 없으면(불량 0 등) '-'."""
+    return "-" if v is None or pd.isna(v) else f"{v:.1f}x"
+
+
+NO_CV_MODE = "(cv_mode 없음)"
+
+
 def _markdown(summary: pd.DataFrame, ks, notes, n_files) -> str:
     L = ["# 실험 결과 요약 (자동 생성)", "",
          f"- 생성: {time.strftime('%Y-%m-%d %H:%M')} · 예측 파일 {n_files}개",
          "- 평균 ± 편차 = 교차검증 반복(repeat)별 값의 평균과 표준편차 (없으면 fold별, 그것도 없으면 1회 값)",
          "- 무작위 기준선: PR-AUC ≈ 불량률, Recall@K(R@K) ≈ K. 괄호 안 배수 = PR-AUC ÷ 불량률",
          "- FN·FP: repeat 단위면 전체 1회분의 평균, fold 단위면 fold 합계 (둘 다 '데이터 전체를 한 번 예측했을 때' 기준)", ""]
+    L.append("- **검증 방식(cv_mode)이 다른 수치는 한 표에서 비교하지 않는다**: shot CV(짝만 묶음, 낙관적)와 "
+             "block CV(연속 10샷 묶음, 보수적)는 표를 나눈다")
+    L.append("")
     labels = [f"{k * 100:g}%" for k in ks]
-    for level, title in (("shot", "샷 단위 (LH/RH 짝 = 한 샷, 짝 중 하나라도 불량이면 불량 샷)"),
-                         ("row", "행 단위 (제품 하나 = 한 행)")):
-        sub = summary[summary["level"].eq(level)]
-        if sub.empty:
-            continue
-        keys = [c for c in GROUP_KEYS if c in sub.columns and sub[c].notna().any() and c != "model"]
-        if "dataset" in keys and "product" in sub.columns and (
-                sub["dataset"].isna() | sub["dataset"].astype(str).eq(sub["product"].astype(str))).all():
-            keys.remove("dataset")  # 제품별 학습이면 dataset = product라 생략
-        L += [f"## {title}", ""]
-        head = [*keys, "model", "불량/전체", "PR-AUC (배수)", "ROC-AUC", "판정", "F1", "FN", "FP",
-                *[f"R@{x}" for x in labels]]
-        L += ["| " + " | ".join(head) + " |", "|" + "---|" * len(head)]
-        for _, r in sub.iterrows():
-            cells = [_s(r[k]) for k in keys] + [str(r["model"]), f"{int(r['n_pos'])}/{int(r['n'])}",
-                     f"{_fmt(r['pr_auc_mean'], r['pr_auc_std'])} ({r['pr_auc_lift']:.1f}x)",
-                     _fmt(r["roc_auc_mean"]), str(r["decision"]), _fmt(r["f1_mean"], r["f1_std"]),
-                     _fmt(r["fn_mean"], d=1), _fmt(r["fp_mean"], d=1)]
-            cells += [_fmt(r.get(f"recall@{x}_mean")) for x in labels]
-            L.append("| " + " | ".join(cells) + " |")
-        L.append("")
+    cvm = summary["cv_mode"].fillna(NO_CV_MODE).astype(str) if "cv_mode" in summary.columns \
+        else pd.Series(NO_CV_MODE, index=summary.index)
+    for mode in sorted(cvm.unique(), key=lambda m: (m == NO_CV_MODE, m)):
+        L += [f"# cv_mode = {mode}" + (" ⚠ 검증 방식을 알 수 없음 — 다른 표와 직접 비교 금지" if mode == NO_CV_MODE else ""), ""]
+        for level, title in (("shot", "샷 단위 (LH/RH 짝 = 한 샷, 짝 중 하나라도 불량이면 불량 샷)"),
+                             ("row", "행 단위 (제품 하나 = 한 행)")):
+            sub = summary[summary["level"].eq(level) & cvm.eq(mode)]
+            if sub.empty:
+                continue
+            keys = [c for c in GROUP_KEYS if c in sub.columns and sub[c].notna().any() and c not in ("model", "cv_mode")]
+            if "dataset" in keys and "product" in sub.columns and (
+                    sub["dataset"].isna() | sub["dataset"].astype(str).eq(sub["product"].astype(str))).all():
+                keys.remove("dataset")  # 제품별 학습이면 dataset = product라 생략
+            L += [f"## {title} — cv_mode = {mode}", ""]
+            head = [*keys, "model", "file", "불량/전체", "PR-AUC (배수)", "ROC-AUC", "판정", "F1", "FN", "FP",
+                    *[f"R@{x}" for x in labels]]
+            L += ["| " + " | ".join(head) + " |", "|" + "---|" * len(head)]
+            for _, r in sub.iterrows():
+                cells = [_s(r[k]) for k in keys] + [str(r["model"]), str(r["file"]), f"{int(r['n_pos'])}/{int(r['n'])}",
+                         f"{_fmt(r['pr_auc_mean'], r['pr_auc_std'])} ({lift_text(r['pr_auc_lift'])})",
+                         _fmt(r["roc_auc_mean"]), str(r["decision"]), _fmt(r["f1_mean"], r["f1_std"]),
+                         _fmt(r["fn_mean"], d=1), _fmt(r["fp_mean"], d=1)]
+                cells += [_fmt(r.get(f"recall@{x}_mean")) for x in labels]
+                L.append("| " + " | ".join(cells) + " |")
+            L.append("")
     if notes:
         L += ["## 확인 필요", ""] + [f"- {n}" for n in notes] + [""]
     return "\n".join(L)
@@ -91,11 +106,19 @@ def save_experiment_result(pred_dir="outputs/predictions", out_dir="outputs/eval
         shot_map = cand if cand.exists() else None
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    summ, kdet, tdet, mani, notes = [], [], [], [], []
+    summ, kdet, tdet, mani, notes, skipped = [], [], [], [], [], []
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         for path in paths:
-            df = load_predictions(path, shot_map=shot_map)
+            try:
+                df = load_predictions(path, shot_map=shot_map)
+            except MissingRequiredColumns:
+                skipped.append(path.name)
+                notes.append(f"{path.name}: y_true/y_score 열이 없어 건너뜀 (정답이 없는 예측 — 예: unlabeled — 은 평가 대상이 아님)")
+                continue
+            if "cv_mode" not in df.columns:
+                notes.append(f"{path.name}: cv_mode 열이 없음 → 검증 방식(shot/block)을 알 수 없어 별도 표로 분리. "
+                             "다른 모델과 직접 비교하지 말 것")
             keys = [c for c in GROUP_KEYS if c in df.columns]
             groups = df.groupby(keys, sort=True, dropna=False) if keys else [((), df)]
             n_split = 0
@@ -131,10 +154,12 @@ def save_experiment_result(pred_dir="outputs/predictions", out_dir="outputs/eval
         if msg not in notes:
             notes.append(msg)
 
+    if not summ:
+        raise FileNotFoundError(f"평가할 수 있는 예측 파일이 없습니다 (건너뜀: {skipped})")
     summary = pd.DataFrame(summ)
     lead = [c for c in LEAD if c in summary.columns]
     summary = summary[lead + [c for c in summary.columns if c not in lead]]
-    sort = [c for c in ("product", "level", "cv_mode") if c in summary.columns]
+    sort = [c for c in ("cv_mode", "product", "level") if c in summary.columns]
     summary = summary.sort_values(sort + ["pr_auc_mean"], ascending=[True] * len(sort) + [False],
                                   kind="stable").reset_index(drop=True)
     summary.to_csv(out_dir / "experiment_summary.csv", index=False, encoding="utf-8-sig")
@@ -148,9 +173,10 @@ def save_experiment_result(pred_dir="outputs/predictions", out_dir="outputs/eval
                              "run_col": run_col, "shot_map": str(shot_map) if shot_map is not None else None},
                 "versions": {"python": platform.python_version(), "numpy": np.__version__,
                              "pandas": pd.__version__, "scikit-learn": sklearn.__version__},
-                "inputs": mani, "notes": notes}
+                "inputs": mani, "skipped_files": skipped, "notes": notes}
     (out_dir / "evaluation_manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1),
                                                       encoding="utf-8")
+    summary.attrs["skipped_files"], summary.attrs["notes"] = skipped, notes
     if verbose:
         print(f"[평가] 예측 파일 {len(paths)}개 → {out_dir / 'experiment_summary.csv'} ({len(summary)}줄)")
         for n in notes:

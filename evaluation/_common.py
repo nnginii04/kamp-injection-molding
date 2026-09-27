@@ -3,8 +3,10 @@
 팀 공통 예측 CSV 형식 (자세한 설명은 evaluation/README.md)
   필수  y_true  : 정답 (1 = 불량, 0 = 양품)
         y_score : 불량 의심 점수 (클수록 불량 가능성이 높음. 확률이 아니어도 됨)
+  권장  product(또는 mold: cn7/rg3), model, cv_mode(shot/block), repeat, fold, row_id(대회 파일의 'Unnamed: 0')
   선택  y_pred  : 모델이 내린 판정 (0/1)
-        model, product(cn7/rg3), repeat(교차검증 반복 번호), fold, shot_id(LH/RH 짝 번호), row_id(대회 파일의 'Unnamed: 0')
+        shot_id : 넣어도 무시한다. row_id 로 run_all.py 의 전역 shot_id(공정값 전체가 같은 행 = 한 shot)를 항상 붙인다
+                  (파일마다 shot 을 다르게 묶으면 — 예: 연속 행만 묶기 — 짝이 갈라져 누수·집계 차이가 생기므로)
 열 이름이 조금 달라도(y, p, pred, label, prob ...) 자동으로 맞춘다.
 """
 from __future__ import annotations
@@ -23,9 +25,14 @@ ALIASES = {
                 "risk_score", "cv_risk_score", "defect_prob", "cv_defect_prob"),
     "y_pred": ("y_pred", "pred", "pred_label", "cv_pred_label", "prediction"),
     "row_id": ("row_id", "unnamed: 0", "id"),
+    "product": ("product", "mold"),
 }
 # 결과표를 나누는 기준 열 (파일에 있는 것만 사용)
 GROUP_KEYS = ("model", "product", "cv_mode", "dataset", "scenario")
+
+
+class MissingRequiredColumns(ValueError):
+    """y_true / y_score 가 없는 파일 (예: 정답이 없는 unlabeled 예측) → 평가에서 건너뛴다."""
 
 
 def read_csv_any(path) -> pd.DataFrame:
@@ -60,7 +67,7 @@ def standardize(df: pd.DataFrame) -> pd.DataFrame:
                 break
     miss = [c for c in ("y_true", "y_score") if c not in df.columns]
     if miss:
-        raise ValueError(f"필수 열이 없습니다: {miss}. 현재 열: {list(df.columns)}\n"
+        raise MissingRequiredColumns(f"필수 열이 없습니다: {miss}. 현재 열: {list(df.columns)}\n"
                          "정답은 y_true(1=불량), 점수는 y_score(클수록 불량 의심)로 저장해 주세요.")
     y = pd.to_numeric(df["y_true"], errors="coerce")
     if y.isna().any() or not set(y.unique()) <= {0, 1}:
@@ -80,15 +87,25 @@ def standardize(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def attach_shot_id(df: pd.DataFrame, shot_map) -> pd.DataFrame:
-    """row_id(대회 파일의 'Unnamed: 0')로 run_all.py 결과의 shot_id·defect_type을 붙인다.
+    """row_id(대회 파일의 'Unnamed: 0')로 run_all.py 결과의 전역 shot_id·defect_type을 붙인다.
+    파일에 shot_id 가 있어도 무시하고 덮어쓴다 (다르게 묶인 짝 수는 경고로 알림).
     shot_map: outputs/predictions_labeled_cv.csv (경로 또는 DataFrame)"""
     sm = shot_map if isinstance(shot_map, pd.DataFrame) else read_csv_any(shot_map)
     sm = sm.rename(columns={c: "row_id" for c in sm.columns if str(c).lower() in ("unnamed: 0",)})
     if not {"row_id", "shot_id"} <= set(sm.columns) or "row_id" not in df.columns:
         return df
     cols = ["row_id", "shot_id"] + (["defect_type"] if "defect_type" in sm.columns else [])
+    ref = sm[cols].drop_duplicates("row_id")
+    if "shot_id" in df.columns:  # 파일이 가져온 shot 묶음이 전역 기준과 다른지 확인
+        own = df[["row_id", "shot_id"]].drop_duplicates("row_id").merge(ref[["row_id", "shot_id"]], on="row_id",
+                                                                          suffixes=("_file", "_global"))
+        a = own.groupby("shot_id_file")["shot_id_global"].nunique()
+        b = own.groupby("shot_id_global")["shot_id_file"].nunique()
+        if (a > 1).any() or (b > 1).any():
+            warnings.warn(f"파일의 shot_id 가 전역 기준과 다름 (전역 shot 이 갈라진 경우 {int((b > 1).sum())}개, "
+                          f"서로 다른 shot 이 합쳐진 경우 {int((a > 1).sum())}개) → 파일의 shot_id 를 무시하고 전역 shot_id 사용")
     out = df.drop(columns=[c for c in ("shot_id", "defect_type") if c in df.columns]).merge(
-        sm[cols].drop_duplicates("row_id"), on="row_id", how="left")
+        ref, on="row_id", how="left")
     miss = out["shot_id"].isna()
     if miss.any():
         warnings.warn(f"shot_id를 찾지 못한 행 {int(miss.sum())}개는 짝 없는 단독 행으로 취급합니다.")
@@ -105,8 +122,8 @@ def load_predictions(path_or_df, shot_map=None) -> pd.DataFrame:
         df, src = standardize(read_csv_any(path)), path.name
     if "model" not in df.columns:
         df["model"] = Path(src).stem if src != "(DataFrame)" else "model"
-    if "shot_id" not in df.columns and shot_map is not None and "row_id" in df.columns:
-        df = attach_shot_id(df, shot_map)
+    if shot_map is not None and "row_id" in df.columns:
+        df = attach_shot_id(df, shot_map)  # 파일의 shot_id 는 항상 전역 기준으로 덮어씀
     df["source_file"] = src
     return df
 
