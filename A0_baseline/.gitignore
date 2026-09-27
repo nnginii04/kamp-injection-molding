@@ -1,0 +1,14 @@
+# 원본·가공 데이터는 제출 zip에는 넣되, git에는 올리지 않는다 (용량). 각자 data/raw/에 KAMP CSV 4개를 넣고 run_all.py
+data/raw/*.csv
+data/processed/labeled.csv
+data/processed/unlabeled.csv
+# fold_id.csv는 전원이 같은 파일을 써야 하므로 git에 올린다
+!data/processed/fold_id.csv
+
+outputs/model/*.pkl
+outputs/figures/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+.DS_Store
