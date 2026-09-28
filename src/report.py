@@ -286,6 +286,18 @@ def write(path, cfg, audit, dropped, table, ci, choices, final_summ, err, type_t
                 L.append("- shot_ap 기준 통합(B)이 제품별(A)보다 높은 조합 수: "
                          + ", ".join(f"{p.upper()} {int(r['sum'])}/{int(r['size'])}" for p, r in per.iterrows())
                          + " (신호가 없는 제품은 둘 다 기준선 수준이라 우열이 의미 없음)\n")
+    t = exp.get("exp_cross_mold")
+    if t is not None and len(t):
+        L.append("### 2-4b. 교차 금형: 한 금형으로 학습해 다른 금형을 채점 (CN7→RG3, RG3→CN7)\n")
+        L.append("대회 파일은 금형별로 따로 표준화돼 있어 원단위 설정값 차이(예: 사출시간 CN7 9.6s vs RG3 1.1s)는 지워진 상태. "
+                 "따라서 이 실험은 **변동 패턴의 전이**를 본다. 임계값은 학습 금형 안에서만 정함. "
+                 "`own_cv_*_shot_ap` 는 대상 금형이 자기 데이터로 교차검증했을 때의 값(기준).\n")
+        cols = ["direction", "model", "shot_ap", "own_cv_block_shot_ap", "own_cv_shot_shot_ap", "dummy_shot_ap",
+                "lift_vs_dummy", "shot_recall@2%", "shot_recall@5%", "shot_recall@10%", "shot_TP", "shot_FN"]
+        L.append(md(t[[c for c in cols if c in t.columns]]))
+        L.append("\n해석: 교차 성능이 dummy 수준이면 두 금형의 변동 패턴은 공유되지 않는 것. "
+                 "RG3 는 자기 데이터로도 신호가 없으므로(2-1) RG3→CN7 의 실패는 정보 부족, CN7→RG3 의 실패는 분포 차이로 읽어야 함. "
+                 "전이 위험 진단(Wasserstein·MMD·도메인 AUC)은 `outputs/analysis/transfer_risk_*` 참고.\n")
     t = exp.get("exp_class_weight")
     if t is not None and len(t):
         L.append("### 2-5. class_weight: None vs balanced (SMOTE 미사용)\n")

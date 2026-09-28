@@ -44,6 +44,7 @@
   "experiments": {
     "enabled": true,
     "ab_models": ["logreg", "lgbm"],
+    "cross_models": ["logreg", "rf", "lgbm", "xgb", "catboost"],
     "class_weight_models": ["logreg", "rf", "lgbm", "xgb", "catboost"],
     "dummies": ["dummy_most_frequent", "dummy_stratified"],
     "threshold_products": ["cn7"],
