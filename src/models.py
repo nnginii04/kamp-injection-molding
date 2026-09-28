@@ -22,6 +22,18 @@ try:
 except ImportError:  # KAMP-NOTE 등 lightgbm이 없는 환경 대비
     HAS_LGBM = False
 
+try:
+    from xgboost import XGBClassifier
+    HAS_XGB = True
+except ImportError:
+    HAS_XGB = False
+
+try:
+    from catboost import CatBoostClassifier
+    HAS_CAT = True
+except ImportError:
+    HAS_CAT = False
+
 
 def ecdf_score(ref_sorted: np.ndarray, s, ref_sd: float) -> np.ndarray:
     """학습 데이터 점수 분포 기준 백분위(0~1, 양 끝 제외). 학습 범위를 벗어난 값도 순서가 유지되게
@@ -165,6 +177,47 @@ def _lgbm(seed, class_weight="balanced"):
                                           class_weight=class_weight, random_state=seed)
 
 
+class BalancedXGB(ClassifierMixin, BaseEstimator):  # 순서 중요: sklearn>=1.6 태그 인식
+    """XGBoost + fit 시점의 불량 비율로 scale_pos_weight 를 정함 (= class_weight balanced 와 같은 효과).
+    fold 마다 양성 수가 달라서 고정값 대신 fit 때 계산한다. xgboost 가 없으면 HistGradientBoosting 으로 대체."""
+
+    def __init__(self, seed: int = 42, balanced: bool = True):
+        self.seed, self.balanced = seed, balanced
+
+    def fit(self, X, y):
+        y = np.asarray(y)
+        self.classes_ = np.unique(y)
+        spw = float((y == 0).sum() / max((y == 1).sum(), 1)) if self.balanced else 1.0
+        if HAS_XGB:
+            self.model_ = XGBClassifier(n_estimators=300, learning_rate=0.03, max_depth=3, min_child_weight=5,
+                                        subsample=0.8, colsample_bytree=0.8, reg_lambda=5.0,
+                                        scale_pos_weight=spw, random_state=self.seed, n_jobs=2,
+                                        tree_method="hist", eval_metric="aucpr", verbosity=0)
+        else:  # 대체: sklearn 부스팅 (수치는 달라짐)
+            self.model_ = HistGradientBoostingClassifier(max_depth=3, learning_rate=0.05, max_iter=300,
+                                                         min_samples_leaf=10, l2_regularization=5.0,
+                                                         class_weight="balanced" if self.balanced else None,
+                                                         random_state=self.seed)
+        self.model_.fit(X, y)
+        return self
+
+    def predict_proba(self, X):
+        return self.model_.predict_proba(X)
+
+    def predict(self, X):
+        return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
+
+
+def _catboost(seed, balanced=True):
+    if HAS_CAT:
+        return CatBoostClassifier(iterations=300, learning_rate=0.03, depth=3, l2_leaf_reg=5.0,
+                                  auto_class_weights="Balanced" if balanced else None,
+                                  random_seed=seed, thread_count=2, verbose=0, allow_writing_files=False)
+    return HistGradientBoostingClassifier(max_depth=3, learning_rate=0.05, max_iter=300, min_samples_leaf=10,
+                                          l2_regularization=5.0, class_weight="balanced" if balanced else None,
+                                          random_state=seed)
+
+
 def make_model(name: str, seed: int):
     if name == "dummy":
         return DummyClassifier(strategy="prior")
@@ -180,6 +233,10 @@ def make_model(name: str, seed: int):
                                       class_weight=None, random_state=seed, n_jobs=-1)
     if name == "lgbm_none":
         return _lgbm(seed, class_weight=None)
+    if name == "xgb_none":
+        return BalancedXGB(seed=seed, balanced=False)
+    if name == "catboost_none":
+        return _catboost(seed, balanced=False)
     if name == "logreg_v0":  # archive/baseline_v0 의 LogisticRegression(class_weight=None) 재현
         return make_pipeline(StandardScaler(), LogisticRegression(max_iter=5000))
     if name == "spc_maxz":
@@ -196,6 +253,10 @@ def make_model(name: str, seed: int):
                                       class_weight="balanced_subsample", random_state=seed, n_jobs=-1)
     if name == "lgbm":
         return _lgbm(seed)
+    if name == "xgb":
+        return BalancedXGB(seed=seed)
+    if name == "catboost":
+        return _catboost(seed)
     if name == "ensemble":
         return VotingClassifier([("logreg", make_model("logreg", seed)),
                                  ("rf", make_model("rf", seed)),
@@ -206,10 +267,11 @@ def make_model(name: str, seed: int):
 
 
 # 1-SE 규칙에서 '더 단순한 모델'을 고르기 위한 복잡도 순서
-COMPLEXITY = ["dummy", "spc_maxz", "iforest_normal", "iforest_unsup", "logreg", "rf", "lgbm",
+COMPLEXITY = ["dummy", "spc_maxz", "iforest_normal", "iforest_unsup", "logreg", "rf", "lgbm", "xgb", "catboost",
               "ensemble", "hybrid"]
 # 추가 실험 변형의 복잡도는 기반 모델과 같게 본다 (가상 선택 계산용)
 BASE_MODEL = {"logreg_none": "logreg", "logreg_v0": "logreg", "rf_none": "rf", "lgbm_none": "lgbm",
+              "xgb_none": "xgb", "catboost_none": "catboost",
               "dummy_most_frequent": "dummy", "dummy_stratified": "dummy"}
 
 ANOMALY_MODELS = {"spc_maxz", "iforest_normal", "iforest_unsup"}
@@ -222,6 +284,10 @@ MODEL_DESC = {
     "logreg": "로지스틱 회귀 (선형 베이스라인, 클래스 가중치)",
     "rf": "랜덤포레스트 (비선형, 소표본에 강건)",
     "lgbm": "LightGBM (부스팅, 얕은 트리+강한 규제)",
+    "xgb": "XGBoost (부스팅, 얕은 트리+강한 규제, scale_pos_weight 로 클래스 균형)",
+    "catboost": "CatBoost (부스팅, 대칭 트리, auto_class_weights=Balanced)",
+    "xgb_none": "XGBoost, 클래스 가중치 없음",
+    "catboost_none": "CatBoost, 클래스 가중치 없음",
     "ensemble": "소프트 보팅 앙상블 (logreg+rf+lgbm)",
     "hybrid": "2단계 결합: 관리도 강한 이탈(정상 기준 최대 |z| 상위 1% 밖) OR 지도학습 앙상블 위험점수",
     "dummy_most_frequent": "기준선: 항상 다수 클래스(양품) — 점수가 모두 같음",
