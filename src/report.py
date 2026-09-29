@@ -286,15 +286,37 @@ def write(path, cfg, audit, dropped, table, ci, choices, final_summ, err, type_t
                 L.append("- shot_ap 기준 통합(B)이 제품별(A)보다 높은 조합 수: "
                          + ", ".join(f"{p.upper()} {int(r['sum'])}/{int(r['size'])}" for p, r in per.iterrows())
                          + " (신호가 없는 제품은 둘 다 기준선 수준이라 우열이 의미 없음)\n")
+    t = exp.get("exp_cross_mold")
+    if t is not None and len(t):
+        L.append("### 2-4b. 교차 금형: 한 금형으로 학습해 다른 금형을 채점 (CN7→RG3, RG3→CN7)\n")
+        L.append("대회 파일은 금형별로 따로 표준화돼 있어 원단위 설정값 차이(예: 사출시간 CN7 9.6s vs RG3 1.1s)는 지워진 상태. "
+                 "따라서 이 실험은 **변동 패턴의 전이**를 본다. 임계값은 학습 금형 안에서만 정함. "
+                 "`own_cv_*_shot_ap` 는 대상 금형이 자기 데이터로 교차검증했을 때의 값(기준).\n")
+        cols = ["direction", "model", "shot_ap", "own_cv_block_shot_ap", "own_cv_shot_shot_ap", "dummy_shot_ap",
+                "lift_vs_dummy", "shot_recall@2%", "shot_recall@5%", "shot_recall@10%", "shot_TP", "shot_FN"]
+        L.append(md(t[[c for c in cols if c in t.columns]]))
+        L.append("\n해석: 교차 성능이 dummy 수준이면 두 금형의 변동 패턴은 공유되지 않는 것. "
+                 "RG3 는 자기 데이터로도 신호가 없으므로(2-1) RG3→CN7 의 실패는 정보 부족, CN7→RG3 의 실패는 분포 차이로 읽어야 함. "
+                 "전이 위험 진단(Wasserstein·MMD·도메인 AUC)은 `outputs/analysis/transfer_risk_*` 참고.\n")
     t = exp.get("exp_class_weight")
     if t is not None and len(t):
-        L.append("### 2-5. class_weight: None vs balanced (SMOTE 미사용)\n")
+        has_smote = t["class_weight"].astype(str).str.startswith("smote").any()
+        L.append("### 2-5. 불균형 처리: class_weight None vs balanced"
+                 + (" vs SMOTE(학습 fold 안)\n" if has_smote else " (SMOTE 미사용)\n"))
         L.append(md(_cols(t, keep).sort_values(["product", "cv_mode", "model", "class_weight"])))
         cw = t.pivot_table(index=["product", "cv_mode", "model"], columns="class_weight", values="shot_ap")
         if "none" in cw.columns:
-            other = [c for c in cw.columns if c != "none"]
+            other = [c for c in cw.columns if str(c).startswith("balanced")]
             bal = cw[other].bfill(axis=1).iloc[:, 0]
             diff = (cw["none"] - bal).rename("Δ shot_ap (none − balanced)").reset_index()
+            smote_cols = [c for c in cw.columns if str(c).startswith("smote")]
+            if smote_cols:
+                ds = (cw[smote_cols[0]] - bal).rename("Δ shot_ap (smote − balanced)").reset_index()
+                n_worse = int((ds["Δ shot_ap (smote − balanced)"] < 0).sum())
+                L.append("\n**SMOTE(학습 fold 안에서만 1:1 합성, 가중치 없음) − balanced**\n")
+                L.append(md(ds))
+                L.append(f"\n→ {len(ds)}개 비교 중 {n_worse}개에서 SMOTE 가 더 낮음. 합성은 학습 fold 안에서만 수행 "
+                         "(분할 전 증강은 평가를 부풀림 — scripts/guidebook_split_check.py).\n")
             L.append("\n**가중치를 뺐을 때 shot_ap 변화**\n")
             L.append(md(diff))
             for (p, mode), g in diff.groupby(["product", "cv_mode"]):
@@ -327,18 +349,23 @@ def write(path, cfg, audit, dropped, table, ci, choices, final_summ, err, type_t
         dt, info = exp.get(f"defect_type_detection_{p}"), exp.get(f"_defect_type_info_{p}")
         if dt is None or not len(dt) or not info or not info["process_wide_shot_idx"]:
             continue
-        L.append(f"### 3-0. 핵심 발견 ({p.upper()}): 공정변수는 'shot 전체 이상'은 잡고 '캐비티 국소 불량'은 못 잡는다\n")
+        L.append(f"### 3-0. 핵심 발견 ({p.upper()}): 공정변수는 'shot 전체 이상'은 먼저 잡고 '캐비티 국소 불량'은 일부만 잡는다\n")
         L.append(f"`{c['model']}` 의 교차검증 예측에서 불량 유형별로 잡힌 행 수 (반복당 평균). "
                  "`process_wide` = 짝(LH/RH) 둘 다 불량, `cavity_local` = 한쪽만 불량\n")
         L.append(md(dt, floatfmt=1))
         L.append("\n![](figures/key4_defect_type_detection.png)\n")
         pw = info["process_wide_shot_idx"]
         blk = dt[(dt.cv_mode == "block") & (dt.defect_type == "process_wide")]
-        L.append(f"- block CV(처음 보는 구간)에서 상위 2%·5%·점수 0.5 이상으로 잡힌 불량은 **짝 둘 다 불량인 shot "
-                 f"{len(pw)}개({int(blk.defect_rows.iloc[0]) if len(blk) else '?'}행)뿐**이고, 한쪽만 불량인 행은 잡히지 않음 "
-                 "→ 부록 B 표에서 TP 가 약 6행에서 멈추는 이유")
-        L.append("- shot CV 에서 한쪽만 불량인 행이 일부 잡히는 것은 같은 불량 구간의 이웃 shot 이 학습에 들어간 경우로 보임 "
-                 "(block CV 에서는 사라짐)")
+        cl = dt[(dt.cv_mode == "block") & (dt.defect_type == "cavity_local")]
+        top_cols = [col for col in dt.columns if col.startswith("TP rows top")]
+        cl_txt = ", ".join(f"{col.replace('TP rows top', '상위 ')} {float(cl[col].iloc[0]):.1f}행"
+                           for col in top_cols) if len(cl) else "?"
+        n_cl = int(cl.defect_rows.iloc[0]) if len(cl) else 0
+        L.append(f"- block CV(처음 보는 구간)에서 **짝 둘 다 불량인 shot {len(pw)}개"
+                 f"({int(blk.defect_rows.iloc[0]) if len(blk) else '?'}행)는 상위 2% 안에서 모두 잡힘**. "
+                 f"한쪽만 불량인 {n_cl}행은 검사 비율을 늘려야 일부 잡힘 ({cl_txt}, 반복 평균)")
+        L.append("- 즉 공정변수 점수는 shot 전체 이상을 먼저 올리고, 캐비티 국소 불량은 뒤쪽에서 부분적으로만 잡는다 "
+                 "(같은 shot 의 다른 캐비티는 양품이라 공정값만으로는 구분 불가 → 행 단위 상한, 1장)")
         L.append(f"- **한계**: 근거가 되는 '짝 둘 다 불량' shot 은 {len(pw)}개(순번 {pw[0]}~{pw[-1]}"
                  + (", 연속" if info["consecutive"] else "") + ")뿐 — 한 번의 공정 이상 구간일 수 있어 일반화에 주의")
         only_local = [q for q, a in audit.items() if a["defect_shots"] and not a["process_wide_shots(양쪽 불량)"]]

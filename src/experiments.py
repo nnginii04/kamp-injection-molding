@@ -8,7 +8,7 @@
 실험
 1) 제품별(A) vs 통합(B, 제품 구분 변수 is_rg3): 통합 모델도 제품별 fold k 를 합친 같은 분할. 제품별 성능 분리.
    + 도메인 분류기 AUC (CN7 과 RG3 를 구분할 수 있는가; 트리/선형)
-2) class_weight None vs balanced
+2) 불균형 처리: class_weight None vs balanced vs 학습 fold 안 SMOTE
 3) 기준선 3종: dummy(prior) / most_frequent / stratified
 4) 최종 모델 임계값 trade-off (0.10~0.90) + 검사비율(budget) 표 — shot·block CV OOF 둘 다
 5) 이전 베이스라인(archive/baseline_v0) 수치와의 비교 사다리
@@ -30,9 +30,9 @@ from sklearn.model_selection import GroupShuffleSplit, StratifiedGroupKFold, cro
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-from .cv import cv_splits, group_splits, make_groups, run_cv
-from .evaluate import expected_topk
-from .models import BASE_MODEL, COMPLEXITY, DeterministicRF
+from .cv import cv_splits, group_splits, inner_threshold, make_groups, run_cv
+from .evaluate import evaluate_oof, expected_topk
+from .models import BASE_MODEL, COMPLEXITY, DeterministicRF, make_model
 
 KEYS = ["cv_mode", "product", "model"]
 VALS = ["row_ap", "shot_ap", "row_roc_auc", "row_recall@10%", "row_f1@2%"]
@@ -148,8 +148,54 @@ def domain_classifier_auc(frames, products, feats, seed) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+# 1b) 교차 금형 ------------------------------------------------------------------------------
+def exp_cross_mold(frames, products, feats, metrics, cfg, ceil) -> pd.DataFrame:
+    """한 금형의 labeled 전체로 학습 → 다른 금형의 labeled 전체를 채점 (CN7→RG3, RG3→CN7).
+
+    대회 파일은 금형별로 따로 표준화돼 있으므로, 이 실험은 '설정값 차이를 지운 뒤 변동 패턴이 옮겨가는가'를 본다
+    (원단위에서는 두 금형이 완전히 다른 운전 영역 — scripts/transfer_risk.py). 임계값은 학습 금형 안에서만 정한다
+    (inner_threshold, shot 단위). 비교 기준 = 대상 금형 자체의 교차검증(같은 모델, 반복 평균)과 dummy."""
+    ecfg = cfg["experiments"]
+    models = [m for m in ecfg.get("cross_models", ecfg["ab_models"]) if m in cfg["models"]]
+    budgets, seed, cvc = cfg["inspection_budgets"], cfg["seed"], cfg["cv"]
+    own = metrics[metrics.scenario.eq("separate")] if "scenario" in metrics.columns else metrics  # dataset 열은 제품명
+    rows = []
+    for src in products:
+        for dst in products:
+            if src == dst:
+                continue
+            ls, ld = frames[src][0].reset_index(drop=True), frames[dst][0].reset_index(drop=True)
+            Xs, ys = ls[feats], ls["y"].to_numpy()
+            Xd, yd = ld[feats], ld["y"].to_numpy()
+            gs = make_groups(ls, "shot", cvc.get("block_shots", 10))
+            for name in models:
+                thr = inner_threshold(make_model(name, seed), Xs, ys, gs, cvc["inner_splits"], seed + 100)
+                m = make_model(name, seed).fit(Xs, ys)
+                p = m.predict_proba(Xd)[:, 1]
+                oof = pd.DataFrame({"y": yd, "p": p, "pred": (p >= thr).astype(int), "shot_id": ld["shot_id"].to_numpy()})
+                met = evaluate_oof(oof, budgets)
+                row = {"direction": f"{src}→{dst}", "train": src, "test": dst, "model": name, "threshold": thr,
+                       "n_train_defect_rows": int(ys.sum()), "n_test_defect_rows": int(yd.sum())}
+                for k in ["shot_ap", "row_ap", "shot_roc_auc", "row_roc_auc"] + \
+                         [f"shot_recall@{int(round(b * 100))}%" for b in budgets] + ["shot_TP", "shot_FP", "shot_FN"]:
+                    row[k] = met.get(k, np.nan)
+                for mode in cvc["modes"]:  # 대상 금형이 '자기 데이터'로 얻는 성능 (기준)
+                    o = own[own["product"].eq(dst) & own.model.eq(name) & own.cv_mode.eq(mode)]
+                    row[f"own_cv_{mode}_shot_ap"] = float(o["shot_ap"].mean()) if len(o) else np.nan
+                d = own[own["product"].eq(dst) & own.model.eq("dummy") & own.cv_mode.eq("shot")]
+                row["dummy_shot_ap"] = float(d["shot_ap"].mean()) if len(d) else np.nan
+                row["lift_vs_dummy"] = row["shot_ap"] / row["dummy_shot_ap"] if row["dummy_shot_ap"] else np.nan
+                rows.append(row)
+    t = pd.DataFrame(rows)
+    return add_ceilings(t.rename(columns={"test": "product"}), ceil).rename(columns={"product": "test"}) \
+        if len(t) else t
+
+
 # 2) class_weight / 3) 기준선 -----------------------------------------------------------------
 def exp_class_weight(frames, products, feats, metrics, oof_all, cfg, ceil):
+    """불균형 처리 비교: 가중치 없음(none) / 클래스 가중치(balanced) / 학습 fold 안 SMOTE(smote, 가중치 없음).
+    SMOTE 는 config.experiments.smote=true 이고 imbalanced-learn 이 있을 때만."""
+    from .models import HAS_SMOTE
     base = [m for m in cfg["experiments"]["class_weight_models"] if m in cfg["models"]]
     none = [f"{m}_none" for m in base]
     o, m = _run_separate(frames, products, feats, none, cfg)
@@ -157,7 +203,14 @@ def exp_class_weight(frames, products, feats, metrics, oof_all, cfg, ceil):
     t_bal = summarize(*_main_subset(metrics, oof_all, base), ceil)
     t_none["class_weight"], t_none["model"] = "none", t_none["model"].map(lambda x: BASE_MODEL.get(x, x))
     t_bal["class_weight"] = t_bal["model"].map(lambda x: "balanced_subsample" if x == "rf" else "balanced")
-    t = pd.concat([t_bal, t_none], ignore_index=True)
+    parts = [t_bal, t_none]
+    if cfg["experiments"].get("smote") and HAS_SMOTE:
+        smote = [f"{mm}_smote" for mm in base]
+        o_s, m_s = _run_separate(frames, products, feats, smote, cfg)
+        t_s = summarize(m_s, o_s, ceil)
+        t_s["class_weight"], t_s["model"] = "smote(fold 안, 1:1)", t_s["model"].map(lambda x: BASE_MODEL.get(x, x))
+        parts.append(t_s)
+    t = pd.concat(parts, ignore_index=True)
     return t[["class_weight"] + [c for c in t.columns if c != "class_weight"]], m, o
 
 
@@ -493,7 +546,9 @@ def run_cv_experiments(frames, products, feats, metrics, oof_all, cfg, audit, lo
     log("  [실험 1] 제품별(A) vs 통합(B)")
     res["exp_ab"], extra["pooled"] = exp_separate_vs_pooled(frames, products, feats, metrics, oof_all, cfg, ceil)
     res["exp_domain_auc"] = domain_classifier_auc(frames, products, feats, cfg["seed"])
-    log("  [실험 2] class_weight None vs balanced")
+    log("  [실험 1b] 교차 금형 (CN7→RG3, RG3→CN7)")
+    res["exp_cross_mold"] = exp_cross_mold(frames, products, feats, metrics, cfg, ceil)
+    log("  [실험 2] 불균형 처리: class_weight None / balanced / SMOTE(fold 안)")
     res["exp_class_weight"], extra["none"], extra_oof_none = exp_class_weight(frames, products, feats, metrics,
                                                                             oof_all, cfg, ceil)
     log("  [실험 3] 기준선 3종")
