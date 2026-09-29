@@ -46,6 +46,7 @@
     "ab_models": ["logreg", "lgbm"],
     "cross_models": ["logreg", "rf", "lgbm", "xgb", "catboost"],
     "class_weight_models": ["logreg", "rf", "lgbm", "xgb", "catboost"],
+    "smote": true,
     "dummies": ["dummy_most_frequent", "dummy_stratified"],
     "threshold_products": ["cn7"],
     "threshold_grid": {"start": 0.10, "stop": 0.90, "step": 0.05},

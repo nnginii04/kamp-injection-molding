@@ -8,7 +8,7 @@
 실험
 1) 제품별(A) vs 통합(B, 제품 구분 변수 is_rg3): 통합 모델도 제품별 fold k 를 합친 같은 분할. 제품별 성능 분리.
    + 도메인 분류기 AUC (CN7 과 RG3 를 구분할 수 있는가; 트리/선형)
-2) class_weight None vs balanced
+2) 불균형 처리: class_weight None vs balanced vs 학습 fold 안 SMOTE
 3) 기준선 3종: dummy(prior) / most_frequent / stratified
 4) 최종 모델 임계값 trade-off (0.10~0.90) + 검사비율(budget) 표 — shot·block CV OOF 둘 다
 5) 이전 베이스라인(archive/baseline_v0) 수치와의 비교 사다리
@@ -193,6 +193,9 @@ def exp_cross_mold(frames, products, feats, metrics, cfg, ceil) -> pd.DataFrame:
 
 # 2) class_weight / 3) 기준선 -----------------------------------------------------------------
 def exp_class_weight(frames, products, feats, metrics, oof_all, cfg, ceil):
+    """불균형 처리 비교: 가중치 없음(none) / 클래스 가중치(balanced) / 학습 fold 안 SMOTE(smote, 가중치 없음).
+    SMOTE 는 config.experiments.smote=true 이고 imbalanced-learn 이 있을 때만."""
+    from .models import HAS_SMOTE
     base = [m for m in cfg["experiments"]["class_weight_models"] if m in cfg["models"]]
     none = [f"{m}_none" for m in base]
     o, m = _run_separate(frames, products, feats, none, cfg)
@@ -200,7 +203,14 @@ def exp_class_weight(frames, products, feats, metrics, oof_all, cfg, ceil):
     t_bal = summarize(*_main_subset(metrics, oof_all, base), ceil)
     t_none["class_weight"], t_none["model"] = "none", t_none["model"].map(lambda x: BASE_MODEL.get(x, x))
     t_bal["class_weight"] = t_bal["model"].map(lambda x: "balanced_subsample" if x == "rf" else "balanced")
-    t = pd.concat([t_bal, t_none], ignore_index=True)
+    parts = [t_bal, t_none]
+    if cfg["experiments"].get("smote") and HAS_SMOTE:
+        smote = [f"{mm}_smote" for mm in base]
+        o_s, m_s = _run_separate(frames, products, feats, smote, cfg)
+        t_s = summarize(m_s, o_s, ceil)
+        t_s["class_weight"], t_s["model"] = "smote(fold 안, 1:1)", t_s["model"].map(lambda x: BASE_MODEL.get(x, x))
+        parts.append(t_s)
+    t = pd.concat(parts, ignore_index=True)
     return t[["class_weight"] + [c for c in t.columns if c != "class_weight"]], m, o
 
 
@@ -538,7 +548,7 @@ def run_cv_experiments(frames, products, feats, metrics, oof_all, cfg, audit, lo
     res["exp_domain_auc"] = domain_classifier_auc(frames, products, feats, cfg["seed"])
     log("  [실험 1b] 교차 금형 (CN7→RG3, RG3→CN7)")
     res["exp_cross_mold"] = exp_cross_mold(frames, products, feats, metrics, cfg, ceil)
-    log("  [실험 2] class_weight None vs balanced")
+    log("  [실험 2] 불균형 처리: class_weight None / balanced / SMOTE(fold 안)")
     res["exp_class_weight"], extra["none"], extra_oof_none = exp_class_weight(frames, products, feats, metrics,
                                                                             oof_all, cfg, ceil)
     log("  [실험 3] 기준선 3종")

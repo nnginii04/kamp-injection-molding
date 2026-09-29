@@ -38,6 +38,12 @@ try:
 except ImportError:
     HAS_CAT = False
 
+try:
+    from imblearn.over_sampling import SMOTE
+    HAS_SMOTE = True
+except ImportError:  # SMOTE 비교 실험만 건너뜀 (본 파이프라인에는 영향 없음)
+    HAS_SMOTE = False
+
 
 def ecdf_score(ref_sorted: np.ndarray, s, ref_sd: float) -> np.ndarray:
     """학습 데이터 점수 분포 기준 백분위(0~1, 양 끝 제외). 학습 범위를 벗어난 값도 순서가 유지되게
@@ -214,6 +220,38 @@ class Hybrid(ClassifierMixin, BaseEstimator):
         return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
 
 
+class SmoteThen(ClassifierMixin, BaseEstimator):
+    """학습 fold 안에서만 SMOTE 로 불량을 1:1 까지 합성한 뒤, 클래스 가중치 없는 기반 모델(<base>_none)을 학습.
+    - 분할 '전에' 증강하면 합성 불량이 평가 쪽 불량과 거의 같은 값이 되어 성능이 부풀려진다
+      (가이드북 결과표의 평가 불량 56·83개 = 파일 전체 불량보다 많음, scripts/guidebook_split_check.py).
+      여기서는 fit() 에 들어온 학습 데이터에만 적용하므로 검증 fold·내부 임계값 fold 모두 합성 행을 보지 않는다.
+    - 학습 fold 불량이 적으면 k_neighbors = min(5, 불량 수 − 1), 불량 2개 미만이면 SMOTE 없이 학습."""
+
+    def __init__(self, base: str = "lgbm", seed: int = 42, k_max: int = 5):
+        self.base, self.seed, self.k_max = base, seed, k_max
+
+    def fit(self, X, y):
+        y = np.asarray(y)
+        n_pos = int(y.sum())
+        self.classes_ = np.array([0, 1])
+        self.model_ = make_model(f"{self.base}_none", self.seed)
+        if n_pos >= 2:
+            sm = SMOTE(k_neighbors=min(self.k_max, n_pos - 1), random_state=self.seed)
+            Xr, yr = sm.fit_resample(X, y)
+            self.n_synthetic_ = int(len(yr) - len(y))
+        else:
+            Xr, yr = X, y
+            self.n_synthetic_ = 0
+        self.model_.fit(Xr, yr)
+        return self
+
+    def predict_proba(self, X):
+        return self.model_.predict_proba(X)
+
+    def predict(self, X):
+        return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
+
+
 class DeterministicRF(RandomForestClassifier):
     """학습은 병렬, 예측은 단일 스레드. sklearn 은 병렬 예측 때 트리별 확률을 스레드 순서대로 더해
     실행마다 끝자리(~1e-16)가 달라진다 → 결과 파일 해시가 매번 달라지는 것을 막는다."""
@@ -299,6 +337,10 @@ def make_model(name: str, seed: int):
         return BalancedXGB(seed=seed, balanced=False)
     if name == "catboost_none":
         return _catboost(seed, balanced=False)
+    if name.endswith("_smote"):
+        if not HAS_SMOTE:
+            raise ImportError("imbalanced-learn 이 없어 SMOTE 비교를 할 수 없습니다 (pip install imbalanced-learn)")
+        return SmoteThen(base=name[: -len("_smote")], seed=seed)
     if name == "logreg_v0":  # archive/baseline_v0 의 LogisticRegression(class_weight=None) 재현
         return make_pipeline(StandardScaler(), LogisticRegression(max_iter=5000))
     if name == "spc_maxz":
@@ -342,6 +384,8 @@ COMPLEXITY = ["dummy", "spc_maxz", "iforest_normal", "iforest_unsup", "ae_normal
 # 추가 실험 변형의 복잡도는 기반 모델과 같게 본다 (가상 선택 계산용)
 BASE_MODEL = {"logreg_none": "logreg", "logreg_v0": "logreg", "rf_none": "rf", "lgbm_none": "lgbm",
               "xgb_none": "xgb", "catboost_none": "catboost",
+              "logreg_smote": "logreg", "rf_smote": "rf", "lgbm_smote": "lgbm", "xgb_smote": "xgb",
+              "catboost_smote": "catboost",
               "dummy_most_frequent": "dummy", "dummy_stratified": "dummy"}
 
 ANOMALY_MODELS = {"spc_maxz", "iforest_normal", "iforest_unsup", "ae_normal"}
@@ -370,4 +414,9 @@ MODEL_DESC = {
     "rf_none": "랜덤포레스트, 클래스 가중치 없음",
     "lgbm_none": "LightGBM, 클래스 가중치 없음",
     "logreg_v0": "이전 베이스라인(v0)의 로지스틱 회귀 (C=1, 가중치 없음)",
+    "logreg_smote": "로지스틱 회귀, 학습 fold 안 SMOTE(1:1) 후 가중치 없이 학습",
+    "rf_smote": "랜덤포레스트, 학습 fold 안 SMOTE(1:1) 후 가중치 없이 학습",
+    "lgbm_smote": "LightGBM, 학습 fold 안 SMOTE(1:1) 후 가중치 없이 학습",
+    "xgb_smote": "XGBoost, 학습 fold 안 SMOTE(1:1) 후 가중치 없이 학습",
+    "catboost_smote": "CatBoost, 학습 fold 안 SMOTE(1:1) 후 가중치 없이 학습",
 }

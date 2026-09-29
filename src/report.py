@@ -300,13 +300,23 @@ def write(path, cfg, audit, dropped, table, ci, choices, final_summ, err, type_t
                  "전이 위험 진단(Wasserstein·MMD·도메인 AUC)은 `outputs/analysis/transfer_risk_*` 참고.\n")
     t = exp.get("exp_class_weight")
     if t is not None and len(t):
-        L.append("### 2-5. class_weight: None vs balanced (SMOTE 미사용)\n")
+        has_smote = t["class_weight"].astype(str).str.startswith("smote").any()
+        L.append("### 2-5. 불균형 처리: class_weight None vs balanced"
+                 + (" vs SMOTE(학습 fold 안)\n" if has_smote else " (SMOTE 미사용)\n"))
         L.append(md(_cols(t, keep).sort_values(["product", "cv_mode", "model", "class_weight"])))
         cw = t.pivot_table(index=["product", "cv_mode", "model"], columns="class_weight", values="shot_ap")
         if "none" in cw.columns:
-            other = [c for c in cw.columns if c != "none"]
+            other = [c for c in cw.columns if str(c).startswith("balanced")]
             bal = cw[other].bfill(axis=1).iloc[:, 0]
             diff = (cw["none"] - bal).rename("Δ shot_ap (none − balanced)").reset_index()
+            smote_cols = [c for c in cw.columns if str(c).startswith("smote")]
+            if smote_cols:
+                ds = (cw[smote_cols[0]] - bal).rename("Δ shot_ap (smote − balanced)").reset_index()
+                n_worse = int((ds["Δ shot_ap (smote − balanced)"] < 0).sum())
+                L.append("\n**SMOTE(학습 fold 안에서만 1:1 합성, 가중치 없음) − balanced**\n")
+                L.append(md(ds))
+                L.append(f"\n→ {len(ds)}개 비교 중 {n_worse}개에서 SMOTE 가 더 낮음. 합성은 학습 fold 안에서만 수행 "
+                         "(분할 전 증강은 평가를 부풀림 — scripts/guidebook_split_check.py).\n")
             L.append("\n**가중치를 뺐을 때 shot_ap 변화**\n")
             L.append(md(diff))
             for (p, mode), g in diff.groupby(["product", "cv_mode"]):

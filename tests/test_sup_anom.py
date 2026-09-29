@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from src.models import AENormal, make_model  # noqa: E402
+from src.models import HAS_SMOTE, AENormal, make_model  # noqa: E402
 
 
 def toy(seed=0, n=300, d=6):
@@ -39,6 +39,18 @@ class TestSupAnom(unittest.TestCase):
         X2.loc[y == 1] = 1e3  # 불량 행 값을 바꿔도 정상만 쓰면 모델이 같아야 함
         b = AENormal(random_state=0).fit(X2, y)
         np.testing.assert_allclose(a.raw_score(X[y == 0]), b.raw_score(X[y == 0]), atol=1e-12)
+
+
+class TestSmote(unittest.TestCase):
+    @unittest.skipUnless(HAS_SMOTE, "imbalanced-learn 없음")
+    def test_smote_only_inside_fit(self):
+        """SMOTE 는 fit 에 들어온 학습 데이터에만 적용되고, 예측 시에는 입력 행 수 그대로 점수를 낸다."""
+        X, y = toy()
+        m = make_model("lgbm_smote", 42).fit(X, y)
+        self.assertEqual(m.n_synthetic_, int((y == 0).sum() - (y == 1).sum()))  # 1:1 까지 합성
+        self.assertEqual(m.predict_proba(X.iloc[:7]).shape, (7, 2))
+        few = y.copy(); few[:] = 0; few[0] = 1  # 불량 1개면 SMOTE 없이 학습
+        self.assertEqual(make_model("logreg_smote", 42).fit(X, few).n_synthetic_, 0)
 
 
 if __name__ == "__main__":
