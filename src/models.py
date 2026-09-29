@@ -13,8 +13,9 @@ from sklearn.dummy import DummyClassifier
 from sklearn.ensemble import (HistGradientBoostingClassifier, IsolationForest, RandomForestClassifier,
                               VotingClassifier)
 from sklearn.linear_model import LogisticRegression
+from sklearn.neural_network import MLPRegressor
 from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
 try:
     from lightgbm import LGBMClassifier
@@ -118,6 +119,62 @@ class IForestNormal(_ScoreClassifier):
                                    n_jobs=1).fit(normal)
         self._set_ref(self.raw_score(normal))
         return self
+
+
+class AENormal(_ScoreClassifier):
+    """가이드북의 잡음제거 오토인코더를 sklearn 으로 옮긴 것 (가이드북 [코드 14~20]).
+    정상(양품) 샘플만 학습: MinMax 정규화 → 입력 30% 를 0 으로 가리는 잡음(가이드북 Dropout 0.3) →
+    Dense 15-5-15 (ReLU) → 복원, MSE·Adam. 점수 = 복원 오차(MSE) — '양품 운전 영역에서 벗어난 정도'.
+    TensorFlow 대신 MLPRegressor 를 쓰므로 가이드북 수치와 똑같지는 않다."""
+
+    def __init__(self, random_state: int = 0, noise: float = 0.3, n_copies: int = 3):
+        self.random_state, self.noise, self.n_copies = random_state, noise, n_copies
+
+    def raw_score(self, X):
+        Z = self.scaler_.transform(np.asarray(X, dtype=float))
+        return ((self.ae_.predict(Z) - Z) ** 2).mean(axis=1)
+
+    def fit(self, X, y):
+        X, y = np.asarray(X, dtype=float), np.asarray(y)
+        normal = X[y == 0] if (y == 0).sum() > 1 else X
+        rng = np.random.default_rng(self.random_state)
+        self.scaler_ = MinMaxScaler().fit(normal)
+        Z = self.scaler_.transform(normal)
+        Zin = np.vstack([Z * (rng.random(Z.shape) >= self.noise) for _ in range(self.n_copies)])
+        self.ae_ = MLPRegressor(hidden_layer_sizes=(15, 5, 15), activation="relu", solver="adam",
+                                learning_rate_init=1e-3, max_iter=300, early_stopping=True,
+                                validation_fraction=0.1, n_iter_no_change=15,
+                                random_state=self.random_state).fit(Zin, np.vstack([Z] * self.n_copies))
+        self._set_ref(self.raw_score(normal))
+        return self
+
+
+class SupAnomAvg(ClassifierMixin, BaseEstimator):
+    """지도학습 점수와 양품 전용 이상 점수의 백분위 평균 (가중치 w_sup, 기본 0.5 — 튜닝하지 않음).
+    - 지도(logreg): '과거 불량과 닮은 조건' / 이상(AE 등): '양품 운전 영역에서 벗어난 정도'.
+    - 각 점수를 학습 fold 분포 기준 백분위로 바꿔 더하므로 채점 묶음에 의존하지 않는다 (한 제품씩 실시간 채점 가능).
+    Hybrid(OR 규칙, 관리도 강한 이탈만 반영)와 달리 두 점수를 항상 같이 본다."""
+
+    def __init__(self, seed: int = 42, sup: str = "logreg", anom: str = "ae_normal", w_sup: float = 0.5):
+        self.seed, self.sup, self.anom, self.w_sup = seed, sup, anom, w_sup
+
+    def fit(self, X, y):
+        self.classes_ = np.array([0, 1])
+        self.sup_ = make_model(self.sup, self.seed).fit(X, y)
+        self.anom_ = make_model(self.anom, self.seed).fit(X, y)
+        s = self.sup_.predict_proba(X)[:, 1]
+        self.ref_ = np.sort(s)
+        self.ref_sd_ = float(np.std(s)) or 1.0
+        return self
+
+    def predict_proba(self, X):
+        ps = ecdf_score(self.ref_, self.sup_.predict_proba(X)[:, 1], self.ref_sd_)
+        pa = self.anom_.predict_proba(X)[:, 1]
+        p = self.w_sup * ps + (1 - self.w_sup) * pa
+        return np.c_[1 - p, p]
+
+    def predict(self, X):
+        return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
 
 
 class Hybrid(ClassifierMixin, BaseEstimator):
@@ -263,18 +320,26 @@ def make_model(name: str, seed: int):
                                  ("lgbm", make_model("lgbm", seed))], voting="soft")
     if name == "hybrid":
         return Hybrid(seed=seed)
+    if name == "ae_normal":
+        return AENormal(random_state=seed)
+    if name == "logreg_ae":
+        return SupAnomAvg(seed=seed, sup="logreg", anom="ae_normal")
+    if name == "logreg_if":  # 대조군: 이상 점수를 Isolation Forest 로
+        return SupAnomAvg(seed=seed, sup="logreg", anom="iforest_normal")
+    if name == "logreg_spc":  # 대조군: 이상 점수를 관리도(max|z|)로
+        return SupAnomAvg(seed=seed, sup="logreg", anom="spc_maxz")
     raise ValueError(f"알 수 없는 모델: {name}")
 
 
 # 1-SE 규칙에서 '더 단순한 모델'을 고르기 위한 복잡도 순서
-COMPLEXITY = ["dummy", "spc_maxz", "iforest_normal", "iforest_unsup", "logreg", "rf", "lgbm", "xgb", "catboost",
-              "ensemble", "hybrid"]
+COMPLEXITY = ["dummy", "spc_maxz", "iforest_normal", "iforest_unsup", "ae_normal", "logreg", "logreg_spc",
+              "logreg_if", "logreg_ae", "rf", "lgbm", "xgb", "catboost", "ensemble", "hybrid"]
 # 추가 실험 변형의 복잡도는 기반 모델과 같게 본다 (가상 선택 계산용)
 BASE_MODEL = {"logreg_none": "logreg", "logreg_v0": "logreg", "rf_none": "rf", "lgbm_none": "lgbm",
               "xgb_none": "xgb", "catboost_none": "catboost",
               "dummy_most_frequent": "dummy", "dummy_stratified": "dummy"}
 
-ANOMALY_MODELS = {"spc_maxz", "iforest_normal", "iforest_unsup"}
+ANOMALY_MODELS = {"spc_maxz", "iforest_normal", "iforest_unsup", "ae_normal"}
 
 MODEL_DESC = {
     "dummy": "불량률만 아는 기준선 (정보 없음)",
@@ -289,6 +354,10 @@ MODEL_DESC = {
     "xgb_none": "XGBoost, 클래스 가중치 없음",
     "catboost_none": "CatBoost, 클래스 가중치 없음",
     "ensemble": "소프트 보팅 앙상블 (logreg+rf+lgbm)",
+    "ae_normal": "이상탐지: 가이드북 잡음제거 오토인코더를 양품만으로 학습, 복원 오차 (sklearn 이식)",
+    "logreg_ae": "결합: 로지스틱 회귀 백분위 + 양품 오토인코더 백분위의 평균 (가중치 0.5 고정)",
+    "logreg_if": "결합 대조군: 로지스틱 회귀 + 양품 Isolation Forest 백분위 평균",
+    "logreg_spc": "결합 대조군: 로지스틱 회귀 + 관리도(max|z|) 백분위 평균",
     "hybrid": "2단계 결합: 관리도 강한 이탈(정상 기준 최대 |z| 상위 1% 밖) OR 지도학습 앙상블 위험점수",
     "dummy_most_frequent": "기준선: 항상 다수 클래스(양품) — 점수가 모두 같음",
     "dummy_stratified": "기준선: 불량률에 맞춰 무작위로 0/1",
