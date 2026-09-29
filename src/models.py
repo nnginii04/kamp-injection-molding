@@ -7,9 +7,12 @@ v1 결과에서 공정 전체 이상(양쪽 캐비티 불량)은 극단적인 �
 """
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.dummy import DummyClassifier
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.ensemble import (HistGradientBoostingClassifier, IsolationForest, RandomForestClassifier,
                               VotingClassifier)
 from sklearn.linear_model import LogisticRegression
@@ -143,8 +146,10 @@ class AENormal(_ScoreClassifier):
         Zin = np.vstack([Z * (rng.random(Z.shape) >= self.noise) for _ in range(self.n_copies)])
         self.ae_ = MLPRegressor(hidden_layer_sizes=(15, 5, 15), activation="relu", solver="adam",
                                 learning_rate_init=1e-3, max_iter=300, early_stopping=True,
-                                validation_fraction=0.1, n_iter_no_change=15,
-                                random_state=self.random_state).fit(Zin, np.vstack([Z] * self.n_copies))
+                                validation_fraction=0.1, n_iter_no_change=15, random_state=self.random_state)
+        with warnings.catch_warnings():  # 300회 미수렴 경고는 결과에 영향 없는 로그 소음 (조기 종료 기준 사용)
+            warnings.simplefilter("ignore", ConvergenceWarning)
+            self.ae_.fit(Zin, np.vstack([Z] * self.n_copies))
         self._set_ref(self.raw_score(normal))
         return self
 

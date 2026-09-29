@@ -339,18 +339,23 @@ def write(path, cfg, audit, dropped, table, ci, choices, final_summ, err, type_t
         dt, info = exp.get(f"defect_type_detection_{p}"), exp.get(f"_defect_type_info_{p}")
         if dt is None or not len(dt) or not info or not info["process_wide_shot_idx"]:
             continue
-        L.append(f"### 3-0. 핵심 발견 ({p.upper()}): 공정변수는 'shot 전체 이상'은 잡고 '캐비티 국소 불량'은 못 잡는다\n")
+        L.append(f"### 3-0. 핵심 발견 ({p.upper()}): 공정변수는 'shot 전체 이상'은 먼저 잡고 '캐비티 국소 불량'은 일부만 잡는다\n")
         L.append(f"`{c['model']}` 의 교차검증 예측에서 불량 유형별로 잡힌 행 수 (반복당 평균). "
                  "`process_wide` = 짝(LH/RH) 둘 다 불량, `cavity_local` = 한쪽만 불량\n")
         L.append(md(dt, floatfmt=1))
         L.append("\n![](figures/key4_defect_type_detection.png)\n")
         pw = info["process_wide_shot_idx"]
         blk = dt[(dt.cv_mode == "block") & (dt.defect_type == "process_wide")]
-        L.append(f"- block CV(처음 보는 구간)에서 상위 2%·5%·점수 0.5 이상으로 잡힌 불량은 **짝 둘 다 불량인 shot "
-                 f"{len(pw)}개({int(blk.defect_rows.iloc[0]) if len(blk) else '?'}행)뿐**이고, 한쪽만 불량인 행은 잡히지 않음 "
-                 "→ 부록 B 표에서 TP 가 약 6행에서 멈추는 이유")
-        L.append("- shot CV 에서 한쪽만 불량인 행이 일부 잡히는 것은 같은 불량 구간의 이웃 shot 이 학습에 들어간 경우로 보임 "
-                 "(block CV 에서는 사라짐)")
+        cl = dt[(dt.cv_mode == "block") & (dt.defect_type == "cavity_local")]
+        top_cols = [col for col in dt.columns if col.startswith("TP rows top")]
+        cl_txt = ", ".join(f"{col.replace('TP rows top', '상위 ')} {float(cl[col].iloc[0]):.1f}행"
+                           for col in top_cols) if len(cl) else "?"
+        n_cl = int(cl.defect_rows.iloc[0]) if len(cl) else 0
+        L.append(f"- block CV(처음 보는 구간)에서 **짝 둘 다 불량인 shot {len(pw)}개"
+                 f"({int(blk.defect_rows.iloc[0]) if len(blk) else '?'}행)는 상위 2% 안에서 모두 잡힘**. "
+                 f"한쪽만 불량인 {n_cl}행은 검사 비율을 늘려야 일부 잡힘 ({cl_txt}, 반복 평균)")
+        L.append("- 즉 공정변수 점수는 shot 전체 이상을 먼저 올리고, 캐비티 국소 불량은 뒤쪽에서 부분적으로만 잡는다 "
+                 "(같은 shot 의 다른 캐비티는 양품이라 공정값만으로는 구분 불가 → 행 단위 상한, 1장)")
         L.append(f"- **한계**: 근거가 되는 '짝 둘 다 불량' shot 은 {len(pw)}개(순번 {pw[0]}~{pw[-1]}"
                  + (", 연속" if info["consecutive"] else "") + ")뿐 — 한 번의 공정 이상 구간일 수 있어 일반화에 주의")
         only_local = [q for q, a in audit.items() if a["defect_shots"] and not a["process_wide_shots(양쪽 불량)"]]
