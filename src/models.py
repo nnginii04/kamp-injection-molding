@@ -45,6 +45,10 @@ except ImportError:  # SMOTE 비교 실험만 건너뜀 (본 파이프라인에�
     HAS_SMOTE = False
 
 
+# 공개 원본(외부 데이터)에서 붙이는 캐비티 위치 열. 지도 모델에는 입력, 이상 점수에는 제외.
+SIDE_COLS = ("side_rh",)
+
+
 def ecdf_score(ref_sorted: np.ndarray, s, ref_sd: float) -> np.ndarray:
     """학습 데이터 점수 분포 기준 백분위(0~1, 양 끝 제외). 학습 범위를 벗어난 값도 순서가 유지되게
     범위 밖에서는 tanh로 부드럽게 늘린다 (범위 밖 값끼리 동점이 되지 않게)."""
@@ -166,13 +170,19 @@ class SupAnomAvg(ClassifierMixin, BaseEstimator):
     - 각 점수를 학습 fold 분포 기준 백분위로 바꿔 더하므로 채점 묶음에 의존하지 않는다 (한 제품씩 실시간 채점 가능).
     Hybrid(OR 규칙, 관리도 강한 이탈만 반영)와 달리 두 점수를 항상 같이 본다."""
 
-    def __init__(self, seed: int = 42, sup: str = "logreg", anom: str = "ae_normal", w_sup: float = 0.5):
-        self.seed, self.sup, self.anom, self.w_sup = seed, sup, anom, w_sup
+    def __init__(self, seed: int = 42, sup: str = "logreg", anom: str = "ae_normal", w_sup: float = 0.5,
+                 anom_exclude: tuple = SIDE_COLS):
+        self.seed, self.sup, self.anom, self.w_sup, self.anom_exclude = seed, sup, anom, w_sup, anom_exclude
+
+    def _anom_X(self, X):
+        """이상 점수에는 캐비티 위치(side) 같은 '공정값이 아닌' 열을 넣지 않는다 (양품 운전 영역만 본다)."""
+        drop = [c for c in self.anom_exclude if hasattr(X, "columns") and c in X.columns]
+        return X.drop(columns=drop) if drop else X
 
     def fit(self, X, y):
         self.classes_ = np.array([0, 1])
         self.sup_ = make_model(self.sup, self.seed).fit(X, y)
-        self.anom_ = make_model(self.anom, self.seed).fit(X, y)
+        self.anom_ = make_model(self.anom, self.seed).fit(self._anom_X(X), y)
         s = self.sup_.predict_proba(X)[:, 1]
         self.ref_ = np.sort(s)
         self.ref_sd_ = float(np.std(s)) or 1.0
@@ -180,7 +190,7 @@ class SupAnomAvg(ClassifierMixin, BaseEstimator):
 
     def predict_proba(self, X):
         ps = ecdf_score(self.ref_, self.sup_.predict_proba(X)[:, 1], self.ref_sd_)
-        pa = self.anom_.predict_proba(X)[:, 1]
+        pa = self.anom_.predict_proba(self._anom_X(X))[:, 1]
         p = self.w_sup * ps + (1 - self.w_sup) * pa
         return np.c_[1 - p, p]
 
