@@ -3,7 +3,7 @@
  (B) 날짜 단위 홀드아웃 (학습에 쓰지 않은 생산일에서 채점) — 사전 등록한 3개 분할
      CN7: 10/16·10/19·10/20 학습 → 10/27 채점 (대회 파일에 없는 날)
      RG3: 10/21·10/22 학습 → 10/23 채점 / 10/21·10/23 학습 → 10/22 채점
-모델: logreg C=0.3 balanced (CN7 최종 모델 설정). 피처 세트: base(공정 23개), +D1, +D2, +D1+D2.
+모델: harness.mk (환경변수 KAMP_MODEL; 기본 logreg_spc, logreg = C=0.3 balanced). 피처 세트: base(공정 23개), +D1, +D2, +D1+D2.
 D3(비지도 관리도): 고정 기준선(학습일 정상 샷 평균·표준편차) vs 이동 기준선(직전 20샷, σ 하한 = 0.25 × 학습 정상 σ)."""
 import os
 import sys
@@ -18,7 +18,7 @@ from dlib import load_public, PROC, D1, D2
 import harness as H
 
 Y = "PassOrFail"
-mk = lambda: make_pipeline(StandardScaler(), LogisticRegression(C=0.3, class_weight="balanced", max_iter=5000))
+mk = H.mk
 pub = load_public()
 FSETS = {"base": [], "+D1": D1, "+D2": D2, "+D1+D2": D1 + D2}
 
@@ -70,9 +70,9 @@ for mold, tr_days, te_day in SPLITS:
     te = pub[(pub.mold == mold) & (pub.date == te_day)]
     for name, extra in FSETS.items():
         f = feats_for(mold, extra)
-        m = mk().fit(tr[f].values, tr[Y].values)
-        rowsB.append({"mold": mold, "test_day": te_day, "model": f"logreg {name}",
-                      **holdout_metrics(shot_table(te, m.predict_proba(te[f].values)[:, 1]))})
+        m = mk().fit(tr[f], tr[Y].values)
+        rowsB.append({"mold": mold, "test_day": te_day, "model": f"모델 {name}",
+                      **holdout_metrics(shot_table(te, m.predict_proba(te[f])[:, 1]))})
     # D3: 비지도 관리도
     f = feats_for(mold, [])
     nrm = tr[tr[Y] == 0][f]; mu, sd = nrm.mean(), nrm.std(ddof=0).replace(0, 1e-9)

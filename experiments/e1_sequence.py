@@ -15,7 +15,7 @@ for mold in ["cn7", "rg3"]:
     df, feats = load(mold)
     base = {m: run_cv(df, feats, mk, m, per_fold=True) for m in ("block", "shot")}
     for m in ("block", "shot"):
-        rows.append({"mold": mold, "variant": "baseline(logreg)", "cv": m, **{k: v[0] for k, v in base[m][0].items()},
+        rows.append({"mold": mold, "variant": f"baseline({MODEL})", "cv": m, **{k: v[0] for k, v in base[m][0].items()},
                      **{k+"_sd": v[1] for k, v in base[m][0].items()}})
     for name, kind in [("E1a Δ1", "d1"), ("E1b dev5", "dev5"), ("E1c Δ1+dev5", "both")]:
         d2, f2 = add_seq(df, feats, kind)

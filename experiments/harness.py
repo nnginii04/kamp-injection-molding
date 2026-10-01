@@ -17,8 +17,63 @@ FILES = {m: os.path.join(ROOT, "data", "raw", f"moldset_labeled_{m}.csv") for m 
 _fold = [p for p in glob.glob(os.path.join(ROOT, "outputs", "**", "fold_id.csv"), recursive=True)]
 assert _fold, "outputs/ 아래 fold_id.csv 가 없음 → run_all.py 를 먼저 실행"
 FOLD = pd.read_csv(_fold[0], encoding="utf-8-sig")
-OUT = os.path.join(ROOT, "outputs", "experiments"); os.makedirs(OUT, exist_ok=True)
 N_REP = 5
+SEED = 42
+
+# ---------- 모델 선택 ----------
+# KAMP_MODEL=logreg      : 기존 설정 (StandardScaler + LogisticRegression C=0.3 balanced) — 9/28~29 결과와 같은 정의
+# KAMP_MODEL=<그 외 이름> : 레포 src/models.py 의 make_model(이름, seed=42) 를 그대로 사용 (예: logreg_spc)
+MODEL = os.environ.get("KAMP_MODEL", "logreg")
+OUT = os.path.join(ROOT, "outputs", "experiments", MODEL); os.makedirs(OUT, exist_ok=True)
+
+
+class _RepoModel:
+    """src.models.make_model 추정기 감싸기. DataFrame 으로 먼저 넣고, 안 되면 numpy 로 넣는다 (입력 형식 차이 흡수)."""
+    def __init__(self, est):
+        self.est, self.np_ = est, False
+
+    def fit(self, X, y):
+        y = np.asarray(y)
+        try:
+            self.est.fit(X, y)
+        except Exception:
+            self.np_ = True
+            self.est.fit(np.asarray(X, dtype=float), y)
+        return self
+
+    def predict_proba(self, X):
+        return self.est.predict_proba(np.asarray(X, dtype=float) if self.np_ else X)
+
+
+def mk():
+    if MODEL == "logreg":
+        from sklearn.pipeline import make_pipeline
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.linear_model import LogisticRegression
+        return make_pipeline(StandardScaler(), LogisticRegression(C=0.3, class_weight="balanced", max_iter=5000))
+    if ROOT not in sys.path:
+        sys.path.insert(0, ROOT)
+    from src.models import make_model
+    return _RepoModel(make_model(MODEL, SEED))
+
+
+def pipeline_oof(mold, row_ids, y, rep, mode="block"):
+    """run_all.py 가 만든 outputs/predictions/pipeline_<MODEL>.csv 의 OOF 점수를 row_ids 순서로 반환.
+    파일이 없거나 행이 다 맞지 않으면 None (그때는 직접 학습). 라벨이 다르면 중단."""
+    p = os.path.join(ROOT, "outputs", "predictions", f"pipeline_{MODEL}.csv")
+    if MODEL == "logreg" or not os.path.exists(p):
+        return None
+    d = pd.read_csv(p, encoding="utf-8-sig")
+    key = next((c for c in ("mold", "product") if c in d.columns and d[c].astype(str).str.lower().eq(mold).any()), None)
+    if key is None:
+        return None
+    d = d[(d[key].astype(str).str.lower() == mold) & (d["cv_mode"] == mode) & (d["repeat"] == rep)]
+    d = d.drop_duplicates("row_id").set_index("row_id")
+    if not pd.Index(row_ids).isin(d.index).all():
+        return None
+    d = d.loc[list(row_ids)]
+    assert (d["y_true"].values == np.asarray(y)).all(), "pipeline 예측 파일의 라벨이 실험 데이터와 다름"
+    return d["y_score"].values.astype(float)
 
 
 def load(mold):
@@ -62,8 +117,8 @@ def run_cv(df, feats, make_model, mode="block", fit_fn=None, per_fold=False):
                 s = fit_fn(tr, va)
             else:
                 m = make_model()
-                m.fit(tr[feats].values, tr[Y].values)
-                s = m.predict_proba(va[feats].values)[:, 1]
+                m.fit(tr[feats], tr[Y].values)
+                s = m.predict_proba(va[feats])[:, 1]
             oof[va.index] = s
             if per_fold:
                 sv = pd.DataFrame({"y": va[Y].values, "s": s, "shot": va["shot_id"].values}).groupby("shot").max()

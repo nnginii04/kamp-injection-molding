@@ -8,8 +8,8 @@ from seqfeat import add_seq, mk
 def shot_fit(feats):
     def fit_fn(tr, va):
         t = tr.groupby("shot_id").agg({**{c: "first" for c in feats}, Y: "max"})
-        m = mk().fit(t[feats].values, t[Y].values)
-        return m.predict_proba(va[feats].values)[:, 1]
+        m = mk().fit(t[feats], t[Y].values)
+        return m.predict_proba(va[feats])[:, 1]
     return fit_fn
 
 rows=[]

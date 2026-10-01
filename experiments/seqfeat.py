@@ -1,8 +1,5 @@
-"""시계열(직전 샷) 피처와 baseline logreg 정의. E1 변형 설명은 e1_sequence.py 참고."""
+"""시계열(직전 샷) 피처. 모델은 harness.mk (KAMP_MODEL). E1 변형 설명은 e1_sequence.py 참고."""
 from harness import *
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LogisticRegression
 
 def add_seq(df, feats, kind):
     shot = df.groupby("shot_idx")[feats].first().sort_index()   # 짝은 공정값이 같음 → 샷 단위 시계열
@@ -17,4 +14,4 @@ def add_seq(df, feats, kind):
     out.index = df.index
     return out, feats + list(add.columns)
 
-mk = lambda: make_pipeline(StandardScaler(), LogisticRegression(C=0.3, class_weight="balanced", max_iter=5000))
+mk = mk  # harness.mk

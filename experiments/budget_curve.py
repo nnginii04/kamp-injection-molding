@@ -7,7 +7,8 @@
  CN7-CV   : 대회 labeled(10/16~20), 점수 = block CV OOF (반복 5회 곡선 평균)
  CN7-10/27: labeled 전체로 학습 → 10/27 채점, 임계값 = labeled OOF 분위수 (처음 보는 날)
  RG3-CV   : 대회 labeled, 점수 = block CV OOF (logreg; 레포 최종은 lgbm 이지만 둘 다 무작위 수준)
-격자: k ∈ {0,1,2,3,5,7,10,15,20,30}%, N ∈ {0,3,5,10}, M ∈ {0,1,3,5}"""
+격자: k ∈ {0,1,2,3,5,7,10,15,20,30}%
+모델: harness.mk (환경변수 KAMP_MODEL). CV 점수는 pipeline_<모델>.csv 가 있으면 그 OOF 를 그대로 사용, N ∈ {0,3,5,10}, M ∈ {0,1,3,5}"""
 import os, sys
 import numpy as np, pandas as pd
 from sklearn.pipeline import make_pipeline
@@ -17,17 +18,24 @@ from dlib import load_public, PROC
 import harness as H
 
 Y = "PassOrFail"
-mk = lambda: make_pipeline(StandardScaler(), LogisticRegression(C=0.3, class_weight="balanced", max_iter=5000))
+mk = H.mk
 KS = [0, .01, .02, .03, .05, .07, .10, .15, .20, .30]; NS = [0, 3, 5, 10]; MS = [0, 1, 3, 5]
 pub = load_public()
 restart_shots = set(pub.loc[pub.shots_since_restart == 0, "shot_id"])
 
 
+SRC = []   # OOF 점수 출처 기록 (pipeline 파일 / 직접 학습)
+
+
 def oof_scores(lab, feats, rep):
+    p = H.pipeline_oof(lab["mold"].iloc[0], lab["row_id"], lab[Y], rep)
+    SRC.append((lab["mold"].iloc[0], rep, "pipeline 예측 파일" if p is not None else "직접 학습"))
+    if p is not None:
+        return p
     col = f"fold_block_r{rep}"; s = np.full(len(lab), np.nan)
     for f in sorted(lab[col].unique()):
         tr, va = lab[lab[col] != f], lab[lab[col] == f]
-        s[va.index] = mk().fit(tr[feats].values, tr[Y].values).predict_proba(va[feats].values)[:, 1]
+        s[va.index] = mk().fit(tr[feats], tr[Y].values).predict_proba(va[feats])[:, 1]
     return s
 
 
@@ -79,13 +87,14 @@ for mold in ("cn7", "rg3"):
     res.append(cv)
     if mold == "cn7":
         te = pub[(pub.mold == "cn7") & (pub.date == "2020-10-27")].reset_index(drop=True)
-        m = mk().fit(lab[feats].values, lab[Y].values)
-        r = simulate(te, m.predict_proba(te[feats].values)[:, 1], thr0); r["set"] = "CN7-10/27(처음 보는 날)"
+        m = mk().fit(lab[feats], lab[Y].values)
+        r = simulate(te, m.predict_proba(te[feats])[:, 1], thr0); r["set"] = "CN7-10/27(처음 보는 날)"
         res.append(r)
 
 R = pd.concat(res)[["set", "k", "N", "M", "inspect_rate", "recall", "inspected", "caught", "defects", "rows"]]
 R.to_csv(os.path.join(H.OUT, "budget_curve.csv"), index=False)
 pd.set_option("display.width", 250)
+print("모델:", H.MODEL, "| CV 점수 출처:", sorted(set(SRC)))
 for s, g in R.groupby("set", sort=False):
     print("\n##", s)
     sel = g[((g.N == 0) & (g.M == 0)) | ((g.k == 0.02) & (g.M.isin([0, 3])) ) | ((g.k == 0) & (g.M == 3))]

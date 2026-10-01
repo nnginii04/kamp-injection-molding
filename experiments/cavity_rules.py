@@ -19,7 +19,7 @@ from dlib import load_public, PROC
 import harness as H
 
 Y = "PassOrFail"
-mk = lambda: make_pipeline(StandardScaler(), LogisticRegression(C=0.3, class_weight="balanced", max_iter=5000))
+mk = H.mk
 pub = load_public(); pub["Reason"] = pub["Reason"].fillna("")
 
 # ---------- (1) 캐비티별 불량률 ----------
@@ -69,10 +69,14 @@ def simulate(df, score, thr, s_both, s_rh, M):
 
 
 def oof(lab, feats, rep=0):
+    p = H.pipeline_oof(lab["mold"].iloc[0], lab["row_id"], lab[Y], rep)
+    print(lab["mold"].iloc[0], "CV 점수 출처:", "pipeline 예측 파일" if p is not None else "직접 학습")
+    if p is not None:
+        return p
     col = f"fold_block_r{rep}"; s = np.full(len(lab), np.nan)
     for f in sorted(lab[col].unique()):
         tr, va = lab[lab[col] != f], lab[lab[col] == f]
-        s[va.index] = mk().fit(tr[feats].values, tr[Y].values).predict_proba(va[feats].values)[:, 1]
+        s[va.index] = mk().fit(tr[feats], tr[Y].values).predict_proba(va[feats])[:, 1]
     return s
 
 
@@ -86,14 +90,14 @@ for mold in ("cn7", "rg3"):
     if mold == "cn7":
         SETS.append(("CN7-CV(10/16~20)", lab, s, thr))
         te = pub[(pub.mold == "cn7") & (pub.date == "2020-10-27")].reset_index(drop=True)
-        SETS.append(("CN7-10/27(처음 보는 날)", te, mk().fit(lab[feats].values, lab[Y].values).predict_proba(te[feats].values)[:, 1], thr))
+        SETS.append(("CN7-10/27(처음 보는 날)", te, mk().fit(lab[feats], lab[Y].values).predict_proba(te[feats])[:, 1], thr))
     else:
         SETS.append(("RG3-CV(10/21~23)", lab, s, thr))
         for tr_d, te_d in [(["2020-10-21", "2020-10-22"], "2020-10-23"), (["2020-10-21", "2020-10-23"], "2020-10-22")]:
             tr = pub[(pub.mold == "rg3") & pub.date.isin(tr_d)]; te = pub[(pub.mold == "rg3") & (pub.date == te_d)].reset_index(drop=True)
-            m = mk().fit(tr[feats].values, tr[Y].values)
-            st = pd.Series(m.predict_proba(tr[feats].values)[:, 1]).groupby(tr.shot_id.values).max()
-            SETS.append((f"RG3-{te_d[5:].replace('-', '/')}(날짜 홀드아웃)", te, m.predict_proba(te[feats].values)[:, 1],
+            m = mk().fit(tr[feats], tr[Y].values)
+            st = pd.Series(m.predict_proba(tr[feats])[:, 1]).groupby(tr.shot_id.values).max()
+            SETS.append((f"RG3-{te_d[5:].replace('-', '/')}(날짜 홀드아웃)", te, m.predict_proba(te[feats])[:, 1],
                          {k: np.quantile(st, 1 - k) for k in (.01, .02, .05, .10, .20)}))
 
 S = [.05, .10, .20, .50, 1.0]

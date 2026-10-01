@@ -1,5 +1,7 @@
 """B안 보고 문장 점검: RG3 E1c(직전 샷 Δ1 + 직전 5샷 중앙값 편차)가 날짜 홀드아웃에서도 유지되는가."""
+import os
 import numpy as np, pandas as pd
+import harness as H
 from d1_d3_domain import pub, mk, feats_for, shot_table, holdout_metrics, Y
 rows=[]
 for tr_days, te_day in [(["2020-10-21","2020-10-22"],"2020-10-23"),(["2020-10-21","2020-10-23"],"2020-10-22")]:
@@ -11,7 +13,8 @@ for tr_days, te_day in [(["2020-10-21","2020-10-22"],"2020-10-23"),(["2020-10-21
     fe = f + list(d1.columns) + list(dv.columns)
     tr, te = m[m.date.isin(tr_days)], m[m.date==te_day]
     for name, ff in [("base", f), ("E1c", fe)]:
-        mod = mk().fit(tr[ff].values, tr[Y].values)
-        r = holdout_metrics(shot_table(te, mod.predict_proba(te[ff].values)[:,1]))
+        mod = mk().fit(tr[ff], tr[Y].values)
+        r = holdout_metrics(shot_table(te, mod.predict_proba(te[ff])[:,1]))
         rows.append({"test_day":te_day,"features":name,"shot_ap":round(r["shot_ap"],3),"random_ap":round(r["random_ap"],3)})
-print(pd.DataFrame(rows).to_string(index=False))
+R = pd.DataFrame(rows); R.to_csv(os.path.join(H.OUT, "d_e1c_dayholdout.csv"), index=False)
+print(R.to_string(index=False))
