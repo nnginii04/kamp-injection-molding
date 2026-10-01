@@ -6,6 +6,9 @@ scikit-learn==1.9.1
 scipy==1.18.1
 matplotlib==3.11.2
 lightgbm==4.7.0          # 없으면 sklearn HistGradientBoosting 으로 자동 대체 (결과 수치는 달라짐)
+xgboost==3.4.1           # 없으면 HistGradientBoosting 으로 대체
+catboost==1.2.10         # 없으면 HistGradientBoosting 으로 대체
+imbalanced-learn==0.14.2 # SMOTE 비교 실험용 (없으면 그 실험만 건너뜀)
 
 # 설명 노트북(notebooks/baseline_explained.ipynb) 실행용
 jupyter==1.1.1

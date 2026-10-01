@@ -15,7 +15,7 @@
          "_note": "3-fold 인 이유: CN7 불량이 연속 구간에 몰려 불량이 든 10샷 블록이 몇 개뿐이라 5-fold 면 검증 fold 에 불량 0개가 생긴다 (report.md 2장 'fold 수 점검' 표). shot_id 는 공정값 전체가 같은 행을 전역으로 묶는다 (연속 행만 묶으면 떨어진 짝이 갈라져 누수)."},
   "holdout": {"enabled": false, "frac": 0.25, "_note": "팀 결정 전까지 끔. 후보 설계별 불량 수 시뮬레이션은 Phase 2 보고 참고."},
   "scenarios": ["separate"],
-  "models": ["dummy", "spc_maxz", "iforest_normal", "logreg", "rf", "lgbm", "ensemble", "hybrid"],
+  "models": ["dummy", "spc_maxz", "iforest_normal", "ae_normal", "logreg", "logreg_spc", "logreg_if", "logreg_ae", "rf", "lgbm", "xgb", "catboost", "ensemble", "hybrid"],
   "selection": {"cv_mode": "block", "metric": "shot_ap", "rule": "one_se"},
   "decision": {"rule": "budget", "budget": 0.02},
   "min_lift_vs_dummy": 1.5,
@@ -44,7 +44,9 @@
   "experiments": {
     "enabled": true,
     "ab_models": ["logreg", "lgbm"],
-    "class_weight_models": ["logreg", "rf", "lgbm"],
+    "cross_models": ["logreg", "rf", "lgbm", "xgb", "catboost"],
+    "class_weight_models": ["logreg", "rf", "lgbm", "xgb", "catboost"],
+    "smote": true,
     "dummies": ["dummy_most_frequent", "dummy_stratified"],
     "threshold_products": ["cn7"],
     "threshold_grid": {"start": 0.10, "stop": 0.90, "step": 0.05},
@@ -60,7 +62,7 @@
 
   "external": {
     "enabled": false,
-    "public_path": "~/Downloads/04. Dataset_Molding.zip",
+    "public_path": "~/KAMP/dataset",
     "_note": "KAMP 공개 원본(zip 또는 압축 푼 폴더). 대회 규정 확인 전까지 모델 입력 금지. scripts/link_public.py·verify_public_link.py 의 해석·검증 전용이며 읽기만 한다. run_all.py 는 원본을 읽지 않고, enabled=true 일 때만 검증 결과(outputs/verification/unlabeled_overlap_flags.csv)로 unlabeled 예측의 in_labeled_train_row·in_labeled_train_shot 을 채운다. 판정 기준은 src/known_facts.py OVERLAP_CRITERION."
   }
 }

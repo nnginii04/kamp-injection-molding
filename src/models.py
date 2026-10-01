@@ -7,20 +7,46 @@ v1 결과에서 공정 전체 이상(양쪽 캐비티 불량)은 극단적인 �
 """
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.dummy import DummyClassifier
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.ensemble import (HistGradientBoostingClassifier, IsolationForest, RandomForestClassifier,
                               VotingClassifier)
 from sklearn.linear_model import LogisticRegression
+from sklearn.neural_network import MLPRegressor
 from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
 try:
     from lightgbm import LGBMClassifier
     HAS_LGBM = True
 except ImportError:  # KAMP-NOTE 등 lightgbm이 없는 환경 대비
     HAS_LGBM = False
+
+try:
+    from xgboost import XGBClassifier
+    HAS_XGB = True
+except ImportError:
+    HAS_XGB = False
+
+try:
+    from catboost import CatBoostClassifier
+    HAS_CAT = True
+except ImportError:
+    HAS_CAT = False
+
+try:
+    from imblearn.over_sampling import SMOTE
+    HAS_SMOTE = True
+except ImportError:  # SMOTE 비교 실험만 건너뜀 (본 파이프라인에는 영향 없음)
+    HAS_SMOTE = False
+
+
+# 공개 원본(외부 데이터)에서 붙이는 캐비티 위치 열. 지도 모델에는 입력, 이상 점수에는 제외.
+SIDE_COLS = ("side_rh",)
 
 
 def ecdf_score(ref_sorted: np.ndarray, s, ref_sd: float) -> np.ndarray:
@@ -108,6 +134,70 @@ class IForestNormal(_ScoreClassifier):
         return self
 
 
+class AENormal(_ScoreClassifier):
+    """가이드북의 잡음제거 오토인코더를 sklearn 으로 옮긴 것 (가이드북 [코드 14~20]).
+    정상(양품) 샘플만 학습: MinMax 정규화 → 입력 30% 를 0 으로 가리는 잡음(가이드북 Dropout 0.3) →
+    Dense 15-5-15 (ReLU) → 복원, MSE·Adam. 점수 = 복원 오차(MSE) — '양품 운전 영역에서 벗어난 정도'.
+    TensorFlow 대신 MLPRegressor 를 쓰므로 가이드북 수치와 똑같지는 않다."""
+
+    def __init__(self, random_state: int = 0, noise: float = 0.3, n_copies: int = 3):
+        self.random_state, self.noise, self.n_copies = random_state, noise, n_copies
+
+    def raw_score(self, X):
+        Z = self.scaler_.transform(np.asarray(X, dtype=float))
+        return ((self.ae_.predict(Z) - Z) ** 2).mean(axis=1)
+
+    def fit(self, X, y):
+        X, y = np.asarray(X, dtype=float), np.asarray(y)
+        normal = X[y == 0] if (y == 0).sum() > 1 else X
+        rng = np.random.default_rng(self.random_state)
+        self.scaler_ = MinMaxScaler().fit(normal)
+        Z = self.scaler_.transform(normal)
+        Zin = np.vstack([Z * (rng.random(Z.shape) >= self.noise) for _ in range(self.n_copies)])
+        self.ae_ = MLPRegressor(hidden_layer_sizes=(15, 5, 15), activation="relu", solver="adam",
+                                learning_rate_init=1e-3, max_iter=300, early_stopping=True,
+                                validation_fraction=0.1, n_iter_no_change=15, random_state=self.random_state)
+        with warnings.catch_warnings():  # 300회 미수렴 경고는 결과에 영향 없는 로그 소음 (조기 종료 기준 사용)
+            warnings.simplefilter("ignore", ConvergenceWarning)
+            self.ae_.fit(Zin, np.vstack([Z] * self.n_copies))
+        self._set_ref(self.raw_score(normal))
+        return self
+
+
+class SupAnomAvg(ClassifierMixin, BaseEstimator):
+    """지도학습 점수와 양품 전용 이상 점수의 백분위 평균 (가중치 w_sup, 기본 0.5 — 튜닝하지 않음).
+    - 지도(logreg): '과거 불량과 닮은 조건' / 이상(AE 등): '양품 운전 영역에서 벗어난 정도'.
+    - 각 점수를 학습 fold 분포 기준 백분위로 바꿔 더하므로 채점 묶음에 의존하지 않는다 (한 제품씩 실시간 채점 가능).
+    Hybrid(OR 규칙, 관리도 강한 이탈만 반영)와 달리 두 점수를 항상 같이 본다."""
+
+    def __init__(self, seed: int = 42, sup: str = "logreg", anom: str = "ae_normal", w_sup: float = 0.5,
+                 anom_exclude: tuple = SIDE_COLS):
+        self.seed, self.sup, self.anom, self.w_sup, self.anom_exclude = seed, sup, anom, w_sup, anom_exclude
+
+    def _anom_X(self, X):
+        """이상 점수에는 캐비티 위치(side) 같은 '공정값이 아닌' 열을 넣지 않는다 (양품 운전 영역만 본다)."""
+        drop = [c for c in self.anom_exclude if hasattr(X, "columns") and c in X.columns]
+        return X.drop(columns=drop) if drop else X
+
+    def fit(self, X, y):
+        self.classes_ = np.array([0, 1])
+        self.sup_ = make_model(self.sup, self.seed).fit(X, y)
+        self.anom_ = make_model(self.anom, self.seed).fit(self._anom_X(X), y)
+        s = self.sup_.predict_proba(X)[:, 1]
+        self.ref_ = np.sort(s)
+        self.ref_sd_ = float(np.std(s)) or 1.0
+        return self
+
+    def predict_proba(self, X):
+        ps = ecdf_score(self.ref_, self.sup_.predict_proba(X)[:, 1], self.ref_sd_)
+        pa = self.anom_.predict_proba(self._anom_X(X))[:, 1]
+        p = self.w_sup * ps + (1 - self.w_sup) * pa
+        return np.c_[1 - p, p]
+
+    def predict(self, X):
+        return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
+
+
 class Hybrid(ClassifierMixin, BaseEstimator):
     """2단계 결합.
     1단계(관리도 경보): 정상 샘플 기준 최대 |z|가 학습 정상 샘플의 상위 (1-gate) 밖이면 강한 경보
@@ -140,6 +230,38 @@ class Hybrid(ClassifierMixin, BaseEstimator):
         return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
 
 
+class SmoteThen(ClassifierMixin, BaseEstimator):
+    """학습 fold 안에서만 SMOTE 로 불량을 1:1 까지 합성한 뒤, 클래스 가중치 없는 기반 모델(<base>_none)을 학습.
+    - 분할 '전에' 증강하면 합성 불량이 평가 쪽 불량과 거의 같은 값이 되어 성능이 부풀려진다
+      (가이드북 결과표의 평가 불량 56·83개 = 파일 전체 불량보다 많음, scripts/guidebook_split_check.py).
+      여기서는 fit() 에 들어온 학습 데이터에만 적용하므로 검증 fold·내부 임계값 fold 모두 합성 행을 보지 않는다.
+    - 학습 fold 불량이 적으면 k_neighbors = min(5, 불량 수 − 1), 불량 2개 미만이면 SMOTE 없이 학습."""
+
+    def __init__(self, base: str = "lgbm", seed: int = 42, k_max: int = 5):
+        self.base, self.seed, self.k_max = base, seed, k_max
+
+    def fit(self, X, y):
+        y = np.asarray(y)
+        n_pos = int(y.sum())
+        self.classes_ = np.array([0, 1])
+        self.model_ = make_model(f"{self.base}_none", self.seed)
+        if n_pos >= 2:
+            sm = SMOTE(k_neighbors=min(self.k_max, n_pos - 1), random_state=self.seed)
+            Xr, yr = sm.fit_resample(X, y)
+            self.n_synthetic_ = int(len(yr) - len(y))
+        else:
+            Xr, yr = X, y
+            self.n_synthetic_ = 0
+        self.model_.fit(Xr, yr)
+        return self
+
+    def predict_proba(self, X):
+        return self.model_.predict_proba(X)
+
+    def predict(self, X):
+        return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
+
+
 class DeterministicRF(RandomForestClassifier):
     """학습은 병렬, 예측은 단일 스레드. sklearn 은 병렬 예측 때 트리별 확률을 스레드 순서대로 더해
     실행마다 끝자리(~1e-16)가 달라진다 → 결과 파일 해시가 매번 달라지는 것을 막는다."""
@@ -165,6 +287,47 @@ def _lgbm(seed, class_weight="balanced"):
                                           class_weight=class_weight, random_state=seed)
 
 
+class BalancedXGB(ClassifierMixin, BaseEstimator):  # 순서 중요: sklearn>=1.6 태그 인식
+    """XGBoost + fit 시점의 불량 비율로 scale_pos_weight 를 정함 (= class_weight balanced 와 같은 효과).
+    fold 마다 양성 수가 달라서 고정값 대신 fit 때 계산한다. xgboost 가 없으면 HistGradientBoosting 으로 대체."""
+
+    def __init__(self, seed: int = 42, balanced: bool = True):
+        self.seed, self.balanced = seed, balanced
+
+    def fit(self, X, y):
+        y = np.asarray(y)
+        self.classes_ = np.unique(y)
+        spw = float((y == 0).sum() / max((y == 1).sum(), 1)) if self.balanced else 1.0
+        if HAS_XGB:
+            self.model_ = XGBClassifier(n_estimators=300, learning_rate=0.03, max_depth=3, min_child_weight=5,
+                                        subsample=0.8, colsample_bytree=0.8, reg_lambda=5.0,
+                                        scale_pos_weight=spw, random_state=self.seed, n_jobs=2,
+                                        tree_method="hist", eval_metric="aucpr", verbosity=0)
+        else:  # 대체: sklearn 부스팅 (수치는 달라짐)
+            self.model_ = HistGradientBoostingClassifier(max_depth=3, learning_rate=0.05, max_iter=300,
+                                                         min_samples_leaf=10, l2_regularization=5.0,
+                                                         class_weight="balanced" if self.balanced else None,
+                                                         random_state=self.seed)
+        self.model_.fit(X, y)
+        return self
+
+    def predict_proba(self, X):
+        return self.model_.predict_proba(X)
+
+    def predict(self, X):
+        return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
+
+
+def _catboost(seed, balanced=True):
+    if HAS_CAT:
+        return CatBoostClassifier(iterations=300, learning_rate=0.03, depth=3, l2_leaf_reg=5.0,
+                                  auto_class_weights="Balanced" if balanced else None,
+                                  random_seed=seed, thread_count=2, verbose=0, allow_writing_files=False)
+    return HistGradientBoostingClassifier(max_depth=3, learning_rate=0.05, max_iter=300, min_samples_leaf=10,
+                                          l2_regularization=5.0, class_weight="balanced" if balanced else None,
+                                          random_state=seed)
+
+
 def make_model(name: str, seed: int):
     if name == "dummy":
         return DummyClassifier(strategy="prior")
@@ -180,6 +343,14 @@ def make_model(name: str, seed: int):
                                       class_weight=None, random_state=seed, n_jobs=-1)
     if name == "lgbm_none":
         return _lgbm(seed, class_weight=None)
+    if name == "xgb_none":
+        return BalancedXGB(seed=seed, balanced=False)
+    if name == "catboost_none":
+        return _catboost(seed, balanced=False)
+    if name.endswith("_smote"):
+        if not HAS_SMOTE:
+            raise ImportError("imbalanced-learn 이 없어 SMOTE 비교를 할 수 없습니다 (pip install imbalanced-learn)")
+        return SmoteThen(base=name[: -len("_smote")], seed=seed)
     if name == "logreg_v0":  # archive/baseline_v0 의 LogisticRegression(class_weight=None) 재현
         return make_pipeline(StandardScaler(), LogisticRegression(max_iter=5000))
     if name == "spc_maxz":
@@ -196,23 +367,38 @@ def make_model(name: str, seed: int):
                                       class_weight="balanced_subsample", random_state=seed, n_jobs=-1)
     if name == "lgbm":
         return _lgbm(seed)
+    if name == "xgb":
+        return BalancedXGB(seed=seed)
+    if name == "catboost":
+        return _catboost(seed)
     if name == "ensemble":
         return VotingClassifier([("logreg", make_model("logreg", seed)),
                                  ("rf", make_model("rf", seed)),
                                  ("lgbm", make_model("lgbm", seed))], voting="soft")
     if name == "hybrid":
         return Hybrid(seed=seed)
+    if name == "ae_normal":
+        return AENormal(random_state=seed)
+    if name == "logreg_ae":
+        return SupAnomAvg(seed=seed, sup="logreg", anom="ae_normal")
+    if name == "logreg_if":  # 대조군: 이상 점수를 Isolation Forest 로
+        return SupAnomAvg(seed=seed, sup="logreg", anom="iforest_normal")
+    if name == "logreg_spc":  # 대조군: 이상 점수를 관리도(max|z|)로
+        return SupAnomAvg(seed=seed, sup="logreg", anom="spc_maxz")
     raise ValueError(f"알 수 없는 모델: {name}")
 
 
 # 1-SE 규칙에서 '더 단순한 모델'을 고르기 위한 복잡도 순서
-COMPLEXITY = ["dummy", "spc_maxz", "iforest_normal", "iforest_unsup", "logreg", "rf", "lgbm",
-              "ensemble", "hybrid"]
+COMPLEXITY = ["dummy", "spc_maxz", "iforest_normal", "iforest_unsup", "ae_normal", "logreg", "logreg_spc",
+              "logreg_if", "logreg_ae", "rf", "lgbm", "xgb", "catboost", "ensemble", "hybrid"]
 # 추가 실험 변형의 복잡도는 기반 모델과 같게 본다 (가상 선택 계산용)
 BASE_MODEL = {"logreg_none": "logreg", "logreg_v0": "logreg", "rf_none": "rf", "lgbm_none": "lgbm",
+              "xgb_none": "xgb", "catboost_none": "catboost",
+              "logreg_smote": "logreg", "rf_smote": "rf", "lgbm_smote": "lgbm", "xgb_smote": "xgb",
+              "catboost_smote": "catboost",
               "dummy_most_frequent": "dummy", "dummy_stratified": "dummy"}
 
-ANOMALY_MODELS = {"spc_maxz", "iforest_normal", "iforest_unsup"}
+ANOMALY_MODELS = {"spc_maxz", "iforest_normal", "iforest_unsup", "ae_normal"}
 
 MODEL_DESC = {
     "dummy": "불량률만 아는 기준선 (정보 없음)",
@@ -222,7 +408,15 @@ MODEL_DESC = {
     "logreg": "로지스틱 회귀 (선형 베이스라인, 클래스 가중치)",
     "rf": "랜덤포레스트 (비선형, 소표본에 강건)",
     "lgbm": "LightGBM (부스팅, 얕은 트리+강한 규제)",
+    "xgb": "XGBoost (부스팅, 얕은 트리+강한 규제, scale_pos_weight 로 클래스 균형)",
+    "catboost": "CatBoost (부스팅, 대칭 트리, auto_class_weights=Balanced)",
+    "xgb_none": "XGBoost, 클래스 가중치 없음",
+    "catboost_none": "CatBoost, 클래스 가중치 없음",
     "ensemble": "소프트 보팅 앙상블 (logreg+rf+lgbm)",
+    "ae_normal": "이상탐지: 가이드북 잡음제거 오토인코더를 양품만으로 학습, 복원 오차 (sklearn 이식)",
+    "logreg_ae": "결합: 로지스틱 회귀 백분위 + 양품 오토인코더 백분위의 평균 (가중치 0.5 고정)",
+    "logreg_if": "결합 대조군: 로지스틱 회귀 + 양품 Isolation Forest 백분위 평균",
+    "logreg_spc": "결합 대조군: 로지스틱 회귀 + 관리도(max|z|) 백분위 평균",
     "hybrid": "2단계 결합: 관리도 강한 이탈(정상 기준 최대 |z| 상위 1% 밖) OR 지도학습 앙상블 위험점수",
     "dummy_most_frequent": "기준선: 항상 다수 클래스(양품) — 점수가 모두 같음",
     "dummy_stratified": "기준선: 불량률에 맞춰 무작위로 0/1",
@@ -230,4 +424,9 @@ MODEL_DESC = {
     "rf_none": "랜덤포레스트, 클래스 가중치 없음",
     "lgbm_none": "LightGBM, 클래스 가중치 없음",
     "logreg_v0": "이전 베이스라인(v0)의 로지스틱 회귀 (C=1, 가중치 없음)",
+    "logreg_smote": "로지스틱 회귀, 학습 fold 안 SMOTE(1:1) 후 가중치 없이 학습",
+    "rf_smote": "랜덤포레스트, 학습 fold 안 SMOTE(1:1) 후 가중치 없이 학습",
+    "lgbm_smote": "LightGBM, 학습 fold 안 SMOTE(1:1) 후 가중치 없이 학습",
+    "xgb_smote": "XGBoost, 학습 fold 안 SMOTE(1:1) 후 가중치 없이 학습",
+    "catboost_smote": "CatBoost, 학습 fold 안 SMOTE(1:1) 후 가중치 없이 학습",
 }
