@@ -58,6 +58,8 @@ def shots_table(F: pd.DataFrame, score: np.ndarray) -> pd.DataFrame:
     S = pd.DataFrame({"ts": g["ts"].min(), "score": g["score"].max()}).sort_values("ts").reset_index()
     parts = {k: v.sort_values("side_rh", ascending=False)[["side_rh", "y"]].to_numpy() for k, v in g}
     S["parts"] = S["shot_id"].map(parts)  # 각 원소: [[side_rh, y], ...], RH 먼저
+    S["score_rank"] = S["score"].rank(ascending=False, method="min").astype(int)  # 1 = 가장 위험
+    S["score_pct"] = (S["score_rank"] / len(S)).round(4)  # 상위 몇 % 인지
     return S
 
 
@@ -99,7 +101,11 @@ def replay(S: pd.DataFrame, thr: float, delay: int, cap: int, rule: str):
                 confirmed_at[t] = t + delay + 1
         log.append(dict(t=t, shot_id=row.shot_id, ts=row.ts, score=round(float(row.score), 5), reason=reason,
                         inspected_parts=n, defect_parts=int(sum(p[1] for p in parts)),
-                        found=int(sum(parts[i][1] for i in chosen)) if n else 0))
+                        found=int(sum(parts[i][1] for i in chosen)) if n else 0,
+                        score_rank=int(row.score_rank), score_pct=float(row.score_pct), thr=round(float(thr), 5),
+                        want_model=int(want_model), want_track=int(want_track), room=int(room),
+                        inspected_sides="+".join("RH" if int(parts[i][0]) else "LH" for i in chosen),
+                        defect_sides="+".join("RH" if int(q[0]) else "LH" for q in parts if int(q[1]))))
     return log, inspected, tp, overflow, confirmed_at
 
 
@@ -132,7 +138,7 @@ def main():
     data = load_all(cfg, ROOT / cfg["data_dir"])
     raw = data["feature_cols"]
     base, _ = features.select_base_features(data, raw, True)
-    summ, ev_rows, logs = [], [], []
+    summ, ev_rows, logs, logs_all = [], [], [], []
     for p in data["labeled"]:
         lab = assign_shots(data["labeled"][p], raw, p).reset_index(drop=True)
         L = X.link_side(lab, pub, raw)
@@ -170,6 +176,8 @@ def main():
                                                     first_confirm_shot=first_conf,
                                                     shots_to_confirm=(first_conf - e[0]) if first_conf is not None else None,
                                                     defect_parts_found=int(sum(r["found"] for r in log if e[0] <= r["t"] <= e[-1]))))
+                            logs_all += [dict(product=p, model=m, threshold=qn, delay=d, cap_per10=c, rule=rule, **r)
+                                         for r in log]
                             if m == "logreg_spc" and qn == "top2" and c == 2:
                                 logs += [dict(product=p, model=m, threshold=qn, delay=d, cap_per10=c, rule=rule, **r)
                                          for r in log]
@@ -178,6 +186,7 @@ def main():
     R.to_csv(out / "delay_replay.csv", index=False, encoding="utf-8-sig")
     pd.DataFrame(ev_rows).to_csv(out / "delay_replay_events.csv", index=False, encoding="utf-8-sig")
     pd.DataFrame(logs).to_csv(out / "delay_replay_log.csv", index=False, encoding="utf-8-sig")
+    pd.DataFrame(logs_all).to_csv(out / "delay_replay_log_full.csv", index=False, encoding="utf-8-sig")
     pd.set_option("display.width", 250)
     show = R[R.cap_per10.eq(2) & R.threshold.eq("top2")]
     print(show.pivot_table(index=["product", "model", "rule"], columns="delay", values=["recall", "inspect_rate"]).round(3).to_string())
