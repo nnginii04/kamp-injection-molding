@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 from src.data import load_all, assign_shots, sha256
 from src.features import select_base_features, check_feature_list
 from src.analysis.shap_final_cn7 import inventory_bytes, table
+from src.analysis.audit_b_final_metadata import append_notes, CAPTION_NOTE, REASON_NOTE
 
 ROOT=Path(__file__).resolve().parents[2]
 OUT=ROOT/'outputs/analysis/fn_fp_final_cn7'
@@ -49,7 +50,7 @@ def compare(d,features,target,reference,common=False):
     return pd.DataFrame(rows).sort_values(['abs_cliffs_delta','feature'],ascending=[False,True]).reset_index(drop=True)
 
 
-def plots(d,stats,fp,fn):
+def plots(d,stats,fp,fn,figure1_only=False):
     plt.rcParams.update({'font.family':'DejaVu Sans','font.size':11,'axes.spines.top':False,'axes.spines.right':False})
     fig,axes=plt.subplots(1,2,figsize=(12,5),gridspec_kw={'width_ratios':[1.3,1]})
     structure=pd.crosstab(d.group,d.side_pattern).reindex(index=ORDER,columns=['normal','one-side','both-side'],fill_value=0)
@@ -69,8 +70,11 @@ def plots(d,stats,fp,fn):
         bottom+=vals
     axes[1].set_ylim(0,14);axes[1].set_ylabel('Defect shots');axes[1].set_title('Defect structure (n=14)',loc='left')
     fig.suptitle('Figure 1 | CN7 Logistic: saved OOF majority decisions',x=.06,ha='left',weight='bold',fontsize=14)
-    fig.text(.06,.015,'Positive = saved shot y_pred is positive in at least 3 of 5 repeats. No new score threshold.\nBoth FN are one-side; 9 of 11 one-side shots are TP. This does not identify a cavity-local cause.',fontsize=10)
+    positive=int(d.group.isin(['TP','FP']).sum());total=len(d)
+    assert (positive,total)==(184,606)
+    fig.text(.06,.015,f'5-repeat majority error analysis: positive decisions = {positive}/{total} shots ({positive/total:.1%}).\nFor fixed inspection-budget performance, see Chapter 4, E1. 12/14 TP is not Recall at a 10% budget.',fontsize=10)
     fig.tight_layout(rect=[.02,.10,.98,.94]);fig.savefig(OUT/'figure1_error_structure.png',dpi=180);plt.close(fig)
+    if figure1_only:return
     # Three strongest univariate effects per comparison; no outcome rule created.
     fig,axes=plt.subplots(2,3,figsize=(13,8))
     for row,(effects,target,reference) in enumerate([(fp,'FP','TN'),(fn,'FN','TP')]):
@@ -199,6 +203,7 @@ def main():
         'CN7 606 Shot의 두 모델 inventory 판정·repeat 양성비율·score를 저장 OOF와 다시 검증했다. 방금 생성한 SHAP verification의 OOF exact match 및 prediction/fold hash를 확인했다. 새로운 학습·추론·threshold tuning은 없었다.',
         '## A. 오류군 구조',table(gs),
         '![오류 구성](figure1_error_structure.png)',
+        CAPTION_NOTE,
         '## B. 공정변수 비교',
         '23개 feature 모두 Shot당 1표본으로 median/Q25/Q75/IQR/Q05/Q95/min/max를 저장했다. 값은 대회 제공 표준화 눈금으로 물리 단위가 아니다. 비교 우선순위는 기존 분석처럼 |Cliff delta|이며, delta=P(target>reference)−P(target<reference)이다. robust 차이는 median 차이를 reference IQR/1.349로 나누되 IQR=0은 NA다.',
         '겹침은 target의 reference IQR/중앙90%/관측범위 포함 비율, IQR 구간 겹침 길이/더 좁은 IQR 길이, KS 거리로 함께 확인했다. 이는 단변량 기술통계이며 다변량 공정영역의 동일함이나 정상 확률을 뜻하지 않는다. IQR=0인 구간 overlap 비율은 NA다. 작은 FN 표본과 날짜·상관변수 영향을 분리하지 못한다.',
@@ -225,6 +230,7 @@ def main():
         'group_summary.csv; reason_structure.csv; feature_group_stats.csv; error_cases.csv; repeat_decisions.csv; fn_tp_comparison.csv; fp_tn_comparison.csv; common_subset_comparison.csv; fn_tn_overlap.csv; fn_normal_overlap.csv; case_representativeness.csv; shap_group_contributions.csv; figure1/2 PNG; verification.json.',
         '재현: `.venv\\Scripts\\python.exe -m src.analysis.fn_fp_final_cn7`']
     (OUT/'summary.md').write_text('\n\n'.join(report),encoding='utf-8')
+    append_notes(OUT/'summary.md',REASON_NOTE)
     print(gs.to_string(index=False))
     print('FN vs TP',fn.head(6)[['feature','cliffs_delta','target_fraction_in_reference_central90']].to_string(index=False))
     print('FP vs TN',fp.head(6)[['feature','cliffs_delta','target_fraction_in_reference_central90']].to_string(index=False))
