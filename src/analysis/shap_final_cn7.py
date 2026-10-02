@@ -23,6 +23,7 @@ from src.features import select_base_features, check_feature_list
 from src.models import make_model
 from src.cv import cv_splits, make_groups
 from src.analysis.shap_oof_explainer import attribution
+from src.analysis.audit_b_final_metadata import append_notes, CLAMP_NOTE, REASON_NOTE
 
 ROOT=Path(__file__).resolve().parents[2]
 OUT=ROOT/'outputs/analysis/shap_final_cn7'
@@ -227,6 +228,7 @@ def main():
     note.extend(['## 산출물과 재현','global_importance.csv, case_summary.csv, tp/fn/fp_contributions.csv, 각 PNG, oof_reproduction_check.csv, additivity_check.csv, fold_coefficients.csv, all_oof_contributions.csv, common_fp_selection.csv, verification.json.',
                  '실행: `.venv\\Scripts\\python.exe -m src.analysis.shap_final_cn7`'])
     (OUT/'summary.md').write_text('\n\n'.join(note),encoding='utf-8')
+    append_notes(OUT/'summary.md',CLAMP_NOTE,REASON_NOTE)
     assert all(sha256(ROOT/p)==h for p,h in protected.items())
     dump('verification.json',dict(oof_exact_match=True,max_absolute_score_error=float(checks.absolute_error.max()),predictions_checked=len(checks),
         fits=15,models_fitted=['logreg'],product='cn7',origin_main_commit=ref,fold_scheme='3-fold x 5 repeat block',
