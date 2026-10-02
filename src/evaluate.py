@@ -87,6 +87,22 @@ def evaluate_oof(oof: pd.DataFrame, budgets) -> dict:
     return m
 
 
+def foldmean_ap(oof: pd.DataFrame) -> dict:
+    """fold 안 순위 기준 AP: 검증 fold 마다 AP 를 따로 재고 평균 (불량이 없는 fold 는 제외).
+    반복마다 fold 를 이어 붙인 pooled OOF 는 fold 간 점수 눈금 차이가 섞여, 백분위 기반 결합 모델이 유리해지는 착시가
+    있었음(2026-10-01 회의, E1 fold 안 순위 비교). 모델 선택(config.selection.metric)은 이 값을 쓴다."""
+    rows, shots = [], []
+    for k, g in oof.groupby("fold"):
+        if k < 0 or g.y.sum() == 0:
+            continue
+        rows.append(_safe(average_precision_score, g.y, g.p))
+        s = to_shot_level(g)
+        shots.append(_safe(average_precision_score, s.y, s.p))
+    return {"row_ap_foldmean": float(np.nanmean(rows)) if rows else np.nan,
+            "shot_ap_foldmean": float(np.nanmean(shots)) if shots else np.nan,
+            "folds_with_defect": len(shots)}
+
+
 def shot_types(lab: pd.DataFrame) -> pd.Series:
     """샷별 불량 유형. process_wide = 짝 두 행 모두 불량(공정 전체 이상),
     cavity_local = 한쪽만 불량(캐비티 국소), single_row = 짝 없는 행이 불량."""

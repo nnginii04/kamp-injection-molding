@@ -254,7 +254,8 @@ def main():
     metrics.to_csv(tab_dir / "cv_metrics_by_repeat.csv", index=False, encoding="utf-8-sig")
     num = [c for c in metrics.columns if c not in ("cv_mode", "dataset", "product", "model", "repeat", "scenario")]
     g = metrics.groupby(["cv_mode", "scenario", "dataset", "product", "model"])[num]
-    table = g.mean().join(g.std()[["shot_ap", "row_f1", "row_ap"]].add_suffix("_sd")).reset_index()
+    table = g.mean().join(g.std()[["shot_ap", "row_f1", "row_ap", "shot_ap_foldmean", "row_ap_foldmean"]]
+                          .add_suffix("_sd")).reset_index()
     table.to_csv(tab_dir / "cv_summary.csv", index=False, encoding="utf-8-sig")
 
     # 팀 공유용 분할표 + fold 수 점검 (run_cv 와 같은 cv_splits 사용)

@@ -204,8 +204,14 @@ def write(path, cfg, audit, dropped, table, ci, choices, final_summ, err, type_t
     L.append("\n".join(f"- `{k}`: {v}" for k, v in MODEL_DESC.items() if k in cfg["models"]) + "\n")
     L.append("`shot_ap` = shot 단위 PR-AUC(짝 중 하나라도 불량이면 불량 shot), `row_ap` = 행 단위 PR-AUC, "
              "`row_recall@k%` = 점수 상위 k% 행만 검사할 때 잡는 불량 행 비율. F1 은 부록 A.\n")
-    pv = _pivot(table, ["shot_ap", "shot_ap_sd", "row_ap", "row_recall@5%", "row_recall@10%"], modes)
-    sort_col = f"shot_ap[{sel['cv_mode']}]" if f"shot_ap[{sel['cv_mode']}]" in pv.columns else pv.columns[3]
+    L.append("`shot_ap_foldmean` = 검증 fold 마다 따로 잰 shot AP 의 평균(fold 안 순위 기준, **모델 선택에 쓰는 값**). "
+             "pooled OOF 는 fold 마다 모델 점수 눈금이 달라 fold 간 순위가 섞이는데, 점수를 백분위로 바꿔 평균하는 결합 모델"
+             "(`logreg_spc` 등)은 이 섞임에 덜 민감해 pooled 에서 유리해 보이지만 fold 안에서 순위를 매기면 로지스틱과 "
+             "구분되지 않았다(2026-10-01 확인). 그래서 선택 기준은 fold 안 순위로 한다.\n")
+    pv = _pivot(table, ["shot_ap_foldmean", "shot_ap_foldmean_sd", "shot_ap", "shot_ap_sd", "row_ap",
+                        "row_recall@5%", "row_recall@10%"], modes)
+    sort_col = (f"{sel['metric']}[{sel['cv_mode']}]" if f"{sel['metric']}[{sel['cv_mode']}]" in pv.columns
+                else pv.columns[3])
     L.append(md(pv.sort_values(["product", sort_col], ascending=[True, False])))
     L.append(CEIL)
     pr = exp.get("perf_range")

@@ -16,7 +16,7 @@
   "holdout": {"enabled": false, "frac": 0.25, "_note": "팀 결정 전까지 끔. 후보 설계별 불량 수 시뮬레이션은 Phase 2 보고 참고."},
   "scenarios": ["separate"],
   "models": ["dummy", "spc_maxz", "iforest_normal", "ae_normal", "logreg", "logreg_spc", "logreg_if", "logreg_ae", "rf", "lgbm", "xgb", "catboost", "ensemble", "hybrid"],
-  "selection": {"cv_mode": "block", "metric": "shot_ap", "rule": "one_se"},
+  "selection": {"cv_mode": "block", "metric": "shot_ap_foldmean", "rule": "one_se", "_note": "2026-10-02 변경: 지표를 pooled OOF shot_ap → fold 안 순위 shot_ap 평균(shot_ap_foldmean)으로. 이유: pooled 순위는 fold 간 점수 눈금 차이가 섞여 백분위 결합 모델(logreg_spc 등)이 유리해 보이는 착시가 있었고, fold 안 순위로 보면 로지스틱과 구분되지 않음(10/1 회의, E1·E3). 후보 목록은 그대로 두고 규칙만 바꿈."},
   "decision": {"rule": "budget", "budget": 0.02},
   "min_lift_vs_dummy": 1.5,
 
