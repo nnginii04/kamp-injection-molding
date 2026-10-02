@@ -11,6 +11,8 @@
 - 결합 방법: 각 점수를 제품 안 백분위로 바꿔 같은 가중치로 평균 (가중치를 튜닝하지 않음).
     S0 모델 점수만 / S1 +불확실성 / S2 +Novelty / S3 +Ambiguity / S4 전부  (파일이 없는 항은 건너뜀)
 - 3구역: 점수 상위 2 % = High(반드시 검사), 2~10 % = Review(사람 판단·여유 있을 때 검사), 나머지 = Low.
+- 순위 기준(--rank): fold = 각 반복의 검증 fold 안에서 백분위를 매긴 뒤 합침 (기본. fold 마다 다른 모델이 낸 점수의
+  눈금 차이를 없앰, E1 과 같은 방식) / pooled = 반복 안 모든 fold 점수를 그대로 합쳐 순위 (이전 방식, 비교용).
 - 동점은 고정 seed 0~19 의 무작위 순서로 끊고 평균한다. 무작위 검사 기준선의 포착률 = 검사량.
 - 수치는 반복 5회 각각 계산한 뒤 평균±표준편차.
 
@@ -97,8 +99,10 @@ def shot_table(d: pd.DataFrame, extras: dict[str, pd.DataFrame]) -> pd.DataFrame
         S[k] = W.mean(axis=1).reindex(S.index)
         for r in W.columns:
             S[f"{k}_r{r}"] = W[r].reindex(S.index)
+    fold = d.drop_duplicates(["shot_id", "repeat"]).pivot(index="shot_id", columns="repeat", values="fold")
     for r in wide.columns:
         S[f"P_r{r}"] = wide[r].groupby(row["shot_id"]).max()
+        S[f"fold_r{r}"] = fold[r].reindex(S.index)
     return S
 
 
@@ -128,6 +132,7 @@ def main():
     ap.add_argument("--models", nargs="*", default=["cn7=logreg", "rg3=lgbm"])
     ap.add_argument("--ambiguity", default=None)
     ap.add_argument("--novelty", default=None)
+    ap.add_argument("--rank", choices=["fold", "pooled"], default="fold")
     args = ap.parse_args()
     cfg = json.loads((ROOT / "config.json").read_text(encoding="utf-8")) if (ROOT / "config.json").exists() else {}
     out_root = ROOT / cfg.get("output_dir", "outputs")
@@ -151,8 +156,11 @@ def main():
             methods["S3 +Ambiguity"] = ["P", "A"]
         if len(extras) >= 1:
             methods["S4 전부"] = ["P", "U"] + sorted(extras)
+        def pr(v, r):  # 백분위: 검증 fold 안(기본) 또는 반복 전체
+            return v.groupby(S[f"fold_r{r}"]).rank(method="average", pct=True) if args.rank == "fold" else pct_rank(v)
+
         def combined(r, terms):
-            comp = {"P": pct_rank(S[f"P_r{r}"]), "U": pct_rank(S["U"]), **{k: pct_rank(S[f"{k}_r{r}"]) for k in extras}}
+            comp = {"P": pr(S[f"P_r{r}"], r), "U": pr(S["U"], r), **{k: pr(S[f"{k}_r{r}"], r) for k in extras}}
             return np.mean([comp[t] for t in terms], axis=0)
 
         # ---- Ablation + Budget Curve (반복별) ----
@@ -168,7 +176,7 @@ def main():
                                    for g, v in zip(grid, np.interp(grid, np.r_[0, x], np.r_[0, y]))]
             R, I = np.array(R), np.array(I)
             for j, b in enumerate(BUDGETS):
-                abl_rows.append(dict(product=product, model=model, method=name, terms="+".join(terms), budget_shots=b,
+                abl_rows.append(dict(product=product, model=model, rank_basis=args.rank, method=name, terms="+".join(terms), budget_shots=b,
                                      inspect_rate_parts=round(I[:, j].mean(), 4), recall_parts=round(R[:, j].mean(), 4),
                                      recall_sd=round(R[:, j].std(ddof=1), 4), random_recall=round(I[:, j].mean(), 4),
                                      missed_defect_parts=round(float(defects.sum() * (1 - R[:, j].mean())), 2),
@@ -178,14 +186,14 @@ def main():
         # ---- 3구역 (S0 기준, 반복별 → 평균) ----
         zr = []
         for r in reps:
-            rk = S[f"P_r{r}"].rank(method="first", ascending=False) / len(S)
+            rk = 1 - pr(S[f"P_r{r}"], r) + 1e-12 if args.rank == "fold" else S[f"P_r{r}"].rank(method="first", ascending=False) / len(S)
             zone = np.where(rk <= ZONES["High"], "High", np.where(rk <= ZONES["Review"], "Review", "Low"))
             for z in ("High", "Review", "Low"):
                 m = zone == z
                 zr.append(dict(zone=z, shots=m.sum(), parts=parts[m].sum(), defect_parts=defects[m].sum()))
         Z = pd.DataFrame(zr).groupby("zone", sort=False).mean()
         for z, v in Z.iterrows():
-            zone_rows.append(dict(product=product, model=model, zone=z, shots=round(v.shots, 1), parts=round(v.parts, 1),
+            zone_rows.append(dict(product=product, model=model, rank_basis=args.rank, zone=z, shots=round(v.shots, 1), parts=round(v.parts, 1),
                                   parts_share=round(v.parts / parts.sum(), 4), defect_parts=round(v.defect_parts, 2),
                                   defect_share=round(v.defect_parts / defects.sum(), 4),
                                   defect_rate_in_zone=round(v.defect_parts / v.parts, 4),
@@ -217,7 +225,7 @@ def main():
     plot(Cm, AB, out)
 
     pd.set_option("display.width", 250)
-    print("\n## Ablation: 검사 예산별 불량 부품 포착률 (반복 5회 평균)")
+    print(f"\n## Ablation: 검사 예산별 불량 부품 포착률 (반복 5회 평균, 순위 기준 = {args.rank})")
     print(AB.pivot_table(index=["product", "method"], columns="budget_shots", values="recall_parts", sort=False).round(3).to_string())
     print("\n## 곡선 면적 (클수록 좋음, 무작위 = 0.5)")
     print(AB.groupby(["product", "method"], sort=False)[["curve_area", "curve_area_sd"]].first().to_string())
