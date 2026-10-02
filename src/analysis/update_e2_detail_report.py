@@ -11,6 +11,7 @@ import pandas as pd
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from src.analysis.audit_b_final_metadata import append_notes, SPC_NOTE, REASON_NOTE
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / 'outputs/analysis'
@@ -56,7 +57,7 @@ def figures(target):
         ax.text(0, -.50, f'Evidence: delay_replay_log_full.csv lines {lines}; delay=0, cap=2, rule=model', fontsize=9, color='#4b5563')
         ax.set_xlabel('Saved score / saved threshold (each model has its own score scale)')
     fig.suptitle('Figure 1 | CN7 shot1173: Logistic score below both inspection thresholds', x=.07, ha='left', fontsize=15, weight='bold')
-    fig.text(.07, .015, 'Rank 1 = highest risk. score_pct is rank / 1389, rounded in source. Saved score is rounded to 5 decimals.\nTop2/top5 thresholds come from calibration; they are not exact quotas on the future rank.', fontsize=9, color='#4b5563')
+    fig.text(.07, .015, 'Rank 1 = highest risk. Scores rounded to 5 decimals; thresholds are calibrated, not exact future-rank quotas.\nSPC driver: Average_Screw_RPM (z=-5.8903 after x10 correction). Recording-scale effects may remain; auxiliary only.', fontsize=9, color='#4b5563')
     fig.tight_layout(rect=[.04, .07, .99, .95], h_pad=1.8)
     fig.savefig(OUT/'fig_cn7_logreg_e2_q1_score_rank.png', dpi=180); plt.close(fig)
 
@@ -86,7 +87,7 @@ def figures(target):
             if r==0:cell.set_text_props(weight='bold')
         ax.text(0,.10,'Same pattern in both top2/top5 and delays 0/1/3/5. *Representative top2, delay=0 row; all rows in evidence CSV.',fontsize=9,color='#4b5563')
     fig.suptitle('Figure 2 | Selection miss vs capacity miss: direct E2 decision records', x=.05, ha='left', fontsize=15, weight='bold')
-    fig.text(.05,.045,'Logistic: low score / low priority -> no request despite available room.\nSPC: request present; detection depends on recorded room and actual RH+LH inspection.\nSource: outputs/inspection/delay_replay_log_full.csv, CN7 t=1173; 64 conditions per model.',fontsize=11)
+    fig.text(.05,.045,'Logistic: low score / low priority -> no request despite available room.\nSPC: recorded inspection outcomes only; RPM recording-scale effects limit process interpretation.\nSource: outputs/inspection/delay_replay_log_full.csv, CN7 t=1173; 64 conditions per model.',fontsize=11)
     fig.tight_layout(rect=[.035,.12,.98,.95],h_pad=2)
     fig.savefig(OUT/'fig_cn7_logreg_e2_q2_decision_flow.png',dpi=180);plt.close(fig)
 
@@ -221,9 +222,12 @@ SPC는 총 64조건 중 16조건 포착, 48조건 미포착이다. 두 threshold
 현재 상세 기록으로 Q1/Q2 결론을 직접 확인할 수 있으므로 추가 학습 또는 replay 재실행이 필요하지 않다. Q3/Q4의 사후 해석을 Logistic score의 원인으로 단정하지 않는다.
 '''
     content=prefix+original_q34+auxiliary+table(show)+suffix
+    content=content.replace('## 보조모델 비교 — Logistic과 구분',
+        '## 보조모델 비교 — Logistic과 구분\n\nSPC 최대 이탈 변수는 ×10 보정 후에도 Average_Screw_RPM이다. 아래 포착·미포착은 저장된 검사운영 결과이며, 기록 눈금/정밀도 변화의 영향 때문에 불량의 직접 공정 신호를 탐지했다는 근거로 해석하지 않는다. 상세 driver 검증은 문서 마지막 절에 기록했다.')
     (OUT/REPORT).write_bytes(content.encode('utf-8'))
     actual=(OUT/REPORT).read_bytes().decode('utf-8')
     assert actual[actual.index('## Q3.'):actual.index('## 보조모델 비교')]==original_q34
+    append_notes(OUT/REPORT,SPC_NOTE,REASON_NOTE)
     assert all(sha(OUT/n)==h for n,h in kept_hashes.items())
     assert sha(SOURCE)==source_hash
     meta=dict(source=str(SOURCE.relative_to(ROOT)),source_sha256=source_hash,source_lines='1-based physical CSV lines, header=1',
