@@ -15,7 +15,9 @@
 - 수치는 반복 5회 각각 계산한 뒤 평균±표준편차.
 
 실행: python scripts/inspection_priority.py [--ambiguity <csv>] [--novelty <csv>] [--models cn7=logreg rg3=lgbm]
-      추가 점수 csv 는 row_id 와 점수 열(이름에 ambig / novel 포함)이 있어야 하고, 제품 열(mold 또는 product)이 있으면 함께 맞춘다.
+      추가 점수 csv 는 점수 열(이름에 ambig / novel 포함)과 제품 열(mold 또는 product)이 있어야 한다. 두 형식을 받는다:
+        (a) shot 단위·반복별: shot_id, repeat, (fold) — 그 반복의 학습 fold 로만 계산한 값. fold 열이 있으면 예측 파일과 대조한다.
+        (b) 행 단위·고정: row_id — 모든 반복에 같은 값을 쓴다.
 결과 (outputs/inspection/): uncertainty.csv, ranking.csv, zone_summary.csv, budget_curve.csv, ablation.csv,
       budget_curve_<제품>.png
 """
@@ -51,36 +53,50 @@ def load_scores(pred_dir: Path, product: str, model: str) -> pd.DataFrame:
     d = d[d["product"].eq(product) & d["cv_mode"].eq("block")]
     assert len(d), f"{p} 에 {product} block 예측이 없음"
     assert d.groupby("row_id")["repeat"].nunique().eq(d["repeat"].nunique()).all(), "행마다 반복 수가 다름"
-    return d[["row_id", "shot_id", "repeat", "y_true", "y_score"]].copy()
+    return d[["row_id", "shot_id", "repeat", "fold", "y_true", "y_score"]].copy()
 
 
-def load_extra(path: str | None, key: str, product: str) -> pd.Series | None:
-    """추가 점수 csv → row_id 기준 점수 (없으면 None)."""
+def load_extra(path: str | None, key: str, product: str, d: pd.DataFrame) -> pd.DataFrame | None:
+    """추가 점수 csv → shot × 반복 표 (없으면 None). d = 그 제품의 예측(행·shot·반복·fold)."""
     if not path:
         return None
-    d = pd.read_csv(path)
-    col = next((c for c in d.columns if key in c.lower()), None)
-    assert col and "row_id" in d.columns, f"{path}: row_id 와 '{key}' 가 들어간 점수 열이 필요"
+    e = pd.read_csv(path)
+    col = next((c for c in e.columns if key in c.lower()), None)
+    assert col, f"{path}: 이름에 '{key}' 가 들어간 점수 열이 필요"
     for c in ("mold", "product"):
-        if c in d.columns:
-            d = d[d[c].astype(str).str.lower().eq(product)]
+        if c in e.columns:
+            e = e[e[c].astype(str).str.lower().eq(product)]
             break
-    return d.groupby("row_id")[col].mean()
+    reps = sorted(d["repeat"].unique())
+    shots = d["shot_id"].drop_duplicates()
+    if {"shot_id", "repeat"} <= set(e.columns) and e["shot_id"].notna().all():  # (a) shot 단위·반복별
+        assert not e.duplicated(["shot_id", "repeat"]).any(), f"{path}: (shot_id, repeat) 중복"
+        if "fold" in e.columns:  # 같은 분할로 계산했는지 대조
+            ref = d.drop_duplicates(["shot_id", "repeat"]).set_index(["shot_id", "repeat"])["fold"]
+            got = e.set_index(["shot_id", "repeat"])["fold"]
+            assert got.reindex(ref.index).eq(ref).all(), f"{path}: fold 배정이 예측 파일과 다름 (다른 분할로 계산된 점수)"
+        W = e.pivot(index="shot_id", columns="repeat", values=col).reindex(index=shots, columns=reps)
+    else:  # (b) 행 단위·고정
+        assert "row_id" in e.columns and e["row_id"].notna().all(), f"{path}: shot_id+repeat 또는 row_id 가 필요"
+        r = d.drop_duplicates("row_id").set_index("row_id")["shot_id"]
+        v = e.groupby("row_id")[col].mean().reindex(r.index).groupby(r).max().reindex(shots)
+        W = pd.DataFrame({k: v for k in reps})
+    assert W.notna().all().all(), f"{path}: {product} 에 점수가 없는 shot 이 있음"
+    return W
 
 
-def shot_table(d: pd.DataFrame, extras: dict[str, pd.Series]) -> pd.DataFrame:
+def shot_table(d: pd.DataFrame, extras: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """반복별 shot 표: 점수(P), 불확실성(U), 추가 점수, 부품 수, 불량 부품 수."""
     wide = d.pivot(index="row_id", columns="repeat", values="y_score")
     row = d.drop_duplicates("row_id").set_index("row_id")[["shot_id", "y_true"]]
     row["U"] = wide.std(axis=1, ddof=0)
     row["P_mean"] = wide.mean(axis=1)
-    for k, s in extras.items():
-        row[k] = s.reindex(row.index)
-        assert row[k].notna().all(), f"{k} 점수가 없는 행이 있음 (row_id 불일치)"
     g = row.groupby("shot_id", sort=False)
     S = pd.DataFrame({"parts": g.size(), "defect_parts": g["y_true"].sum(), "U": g["U"].max(), "P_mean": g["P_mean"].max()})
-    for k in extras:
-        S[k] = g[k].max()
+    for k, W in extras.items():  # 대표값(순위표용) = 반복 평균, 반복별 값은 따로 보관
+        S[k] = W.mean(axis=1).reindex(S.index)
+        for r in W.columns:
+            S[f"{k}_r{r}"] = W[r].reindex(S.index)
     for r in wide.columns:
         S[f"P_r{r}"] = wide[r].groupby(row["shot_id"]).max()
     return S
@@ -122,8 +138,8 @@ def main():
     unc_rows, rank_rows, zone_rows, abl_rows, curve_rows = [], [], [], [], []
     for product, model in models.items():
         d = load_scores(out_root / "predictions", product, model)
-        extras = {k: v for k, v in {"A": load_extra(args.ambiguity, "ambig", product),
-                                    "N": load_extra(args.novelty, "novel", product)}.items() if v is not None}
+        extras = {k: v for k, v in {"A": load_extra(args.ambiguity, "ambig", product, d),
+                                    "N": load_extra(args.novelty, "novel", product, d)}.items() if v is not None}
         S = shot_table(d, extras)
         reps = sorted(d["repeat"].unique())
         parts, defects = S["parts"].to_numpy(), S["defect_parts"].to_numpy()
@@ -135,10 +151,8 @@ def main():
             methods["S3 +Ambiguity"] = ["P", "A"]
         if len(extras) >= 1:
             methods["S4 전부"] = ["P", "U"] + sorted(extras)
-        fixed = {k: pct_rank(S[k]) for k in ["U"] + list(extras)}
-
         def combined(r, terms):
-            comp = {"P": pct_rank(S[f"P_r{r}"]), **fixed}
+            comp = {"P": pct_rank(S[f"P_r{r}"]), "U": pct_rank(S["U"]), **{k: pct_rank(S[f"{k}_r{r}"]) for k in extras}}
             return np.mean([comp[t] for t in terms], axis=0)
 
         # ---- Ablation + Budget Curve (반복별) ----
