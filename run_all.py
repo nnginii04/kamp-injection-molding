@@ -38,6 +38,7 @@ from src.plots import plt, savefig  # noqa: E402
 def select_model(table, p, sel, n_repeats):
     metric, mode = sel["metric"], sel["cv_mode"]
     cand = table[(table["product"] == p) & (table.cv_mode == mode) & (table.model != "dummy")].copy()
+    cand = cand[~cand.model.isin(sel.get("exclude_models", []))]  # 비교표에는 남기되 최종 후보에서 제외
     best = cand.sort_values(metric, ascending=False).iloc[0]
     chosen = best
     if sel.get("rule") == "one_se" and f"{metric}_sd" in cand.columns:

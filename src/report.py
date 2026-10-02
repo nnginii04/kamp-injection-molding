@@ -204,10 +204,11 @@ def write(path, cfg, audit, dropped, table, ci, choices, final_summ, err, type_t
     L.append("\n".join(f"- `{k}`: {v}" for k, v in MODEL_DESC.items() if k in cfg["models"]) + "\n")
     L.append("`shot_ap` = shot 단위 PR-AUC(짝 중 하나라도 불량이면 불량 shot), `row_ap` = 행 단위 PR-AUC, "
              "`row_recall@k%` = 점수 상위 k% 행만 검사할 때 잡는 불량 행 비율. F1 은 부록 A.\n")
-    L.append("`shot_ap_foldmean` = 검증 fold 마다 따로 잰 shot AP 의 평균(fold 안 순위 기준, **모델 선택에 쓰는 값**). "
+    L.append("`shot_ap_foldmean` = 검증 fold 마다 따로 잰 shot AP 의 평균(fold 안 순위 기준, 참고 열). "
              "pooled OOF 는 fold 마다 모델 점수 눈금이 달라 fold 간 순위가 섞이는데, 점수를 백분위로 바꿔 평균하는 결합 모델"
-             "(`logreg_spc` 등)은 이 섞임에 덜 민감해 pooled 에서 유리해 보이지만 fold 안에서 순위를 매기면 로지스틱과 "
-             "구분되지 않았다(2026-10-01 확인). 그래서 선택 기준은 fold 안 순위로 한다.\n")
+             "(`logreg_spc` 등)은 이 섞임에 덜 민감해 pooled 에서 유리해 보인다. 그러나 fold 안에서 순위를 매기면 "
+             "지도 모델들끼리 반복 간 흔들림 안에서 구분되지 않는다(2026-10-01 E1·E3 확인). "
+             "그래서 결합 모델은 '검토했으나 제외'로 비교표에만 남기고 최종 후보에서 뺀다 (`selection.exclude_models`).\n")
     pv = _pivot(table, ["shot_ap_foldmean", "shot_ap_foldmean_sd", "shot_ap", "shot_ap_sd", "row_ap",
                         "row_recall@5%", "row_recall@10%"], modes)
     sort_col = (f"{sel['metric']}[{sel['cv_mode']}]" if f"{sel['metric']}[{sel['cv_mode']}]" in pv.columns
@@ -229,7 +230,11 @@ def write(path, cfg, audit, dropped, table, ci, choices, final_summ, err, type_t
     L.append("### 2-3. 최종 모델 선택\n")
     L.append(f"선택 규칙: `{sel['cv_mode']}` CV의 `{sel['metric']}` 기준, "
              + ("1-SE 규칙(최고 성능과 1 표준오차 이내면 더 단순한 모델)" if sel.get("rule") == "one_se" else "최고값")
-             + ". Accuracy 는 쓰지 않음(불량 1~2% 라 전부 양품으로 찍어도 98%).\n")
+             + ". Accuracy 는 쓰지 않음(불량 1~2% 라 전부 양품으로 찍어도 98%)."
+             + (f" 후보에서 제외한 모델: {', '.join('`'+m+'`' for m in sel['exclude_models'])} "
+                "(지도 점수와 양품 이상점수를 백분위로 평균하는 결합 모델 — pooled OOF 에서의 우위가 fold 간 눈금 차이에서 온 것으로 "
+                "확인되어 '검토했으나 제외', 2-2 표와 5장 참고)." if sel.get("exclude_models") else "")
+             + "\n")
     for p, c in choices.items():
         L.append(f"- **{p.upper()}** → 시나리오 `{c['scenario']}`, 모델 `{c['model']}` "
                  f"({sel['metric']} = {c['score']:.3f}; 최고 `{c['best_model']}` {c['best_score']:.3f}; "
