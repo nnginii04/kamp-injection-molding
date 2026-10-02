@@ -100,7 +100,7 @@ def main():
     out=ROOT/'outputs/analysis'
     cfg=json.loads((ROOT/'config.json').read_text(encoding='utf-8'))
     data=load_all(cfg,ROOT/cfg['data_dir']);raw=data['feature_cols'];features,_=select_base_features(data,raw,True)
-    archive=Path('C:/Users/82102/Downloads/04. Dataset_Molding.zip')
+    archive=_public.public_path(cfg)  # config.external.public_path (zip 또는 폴더) — 로컬 경로 하드코딩 금지(블라인드)
     pub=_public.read_csv(archive,'moldset_labeled.csv');ld=_public.read_csv(archive,'labeled_data.csv')
     lab=assign_shots(data['labeled']['cn7'],raw,'cn7')
     linked=X.link_side(lab,pub,raw);mu,sd,error=X.zscale_params(linked,raw)
@@ -148,7 +148,7 @@ def main():
     prod['date']=pd.to_datetime(prod.TimeStamp).dt.date.astype(str)
     daily=prod.groupby('date').Average_Screw_RPM.agg(['count','min','median','max']);daily.to_csv(out/'cn7_public_rpm_daily_audit.csv')
     meta.to_csv(out/'cn7_public_metadata_audit.csv',index=False,encoding='utf-8-sig')
-    result=dict(public_archive=str(archive),public_members=['dataset/moldset_labeled.csv','dataset/labeled_data.csv'],
+    result=dict(public_archive=archive.name,public_members=['dataset/moldset_labeled.csv','dataset/labeled_data.csv'],
         matched_rows=len(meta),labels_match=True,standardization_max_error=error,clamp_close_time_unique_values=vals,
         clamp_scope='CN7 competition-linked rows of public moldset_labeled.csv',
         defect_rows=len(defect),defect_shots=defect.shot_id.nunique(),defect_start=defect.TimeStamp.min(),defect_end=defect.TimeStamp.max(),

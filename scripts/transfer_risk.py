@@ -246,7 +246,8 @@ def main() -> None:
                "w1_top3": ", ".join(w1["feature"].head(3)), "n_features_w1_gt_1": int((w1["w1_std"] > 1).sum()),
                **mmd, **auc,
                **{f"{k}__cn7_half": v for k, v in base_A.items()}, **{f"{k}__rg3_half": v for k, v in base_B.items()},
-               "config": vars(args)}
+               "config": {**vars(args), "config": Path(args.config).name,
+                          "public": Path(args.public).name if args.public else None}}  # 로컬 경로는 적지 않음
 
     default_name = ("transfer_risk_standardized" if args.standardized else "transfer_risk") + ("_jitter" if args.jitter else "")
     out = Path(args.out) if args.out else ROOT / cfg["output_dir"] / "analysis" / default_name

@@ -84,14 +84,15 @@ block CV = 처음 보는 생산 구간을 가정(비관), shot CV = 같은 구�
 | 구분 | zip 안의 파일 |
 |---|---|
 | 실행·설명 | `README.md`, `requirements.txt`, `config.json`, `run_all.py`, `run_evaluation.py`, `src/`, `evaluation/`, `scripts/`, `tests/`, `notebooks/baseline_explained.ipynb` |
-| 학습 데이터 | `data/raw/` 의 대회 CSV 4개 (`moldset_labeled_cn7/rg3.csv`, `moldset_unlabeled_cn7/rg3.csv`). KAMP 공개 원본은 넣지 않음 |
+| 학습 데이터 | `data/raw/` 의 대회 CSV 4개 (`moldset_labeled_cn7/rg3.csv`, `moldset_unlabeled_cn7/rg3.csv`). KAMP 공개 원본은 `--include-public` 일 때만 `data/public/` 에 (출처·SHA-256 메모 `SOURCE.md` 포함) |
 | 테스트 예측결과 | `outputs/predictions_labeled_cv.csv` (labeled 전 행의 교차검증 예측 = 테스트 예측), `outputs/predictions/pipeline_*.csv` (모델 8개의 교차검증 예측, 팀 공통 형식) |
 | unlabeled 예측 | `outputs/predictions_unlabeled/predictions_unlabeled.csv` + `predictions_unlabeled_meta.json` (점수는 순위 용도, labeled 행 포함 가능성 경고) |
 | 결과·근거 | `outputs/report.md`, `outputs/figures/`, `outputs/tables/`, `outputs/evaluation/`, `outputs/fold_id.csv`, `outputs/manifest.json`, `outputs/audit.json`, `outputs/run_log.txt` |
 | 참고 | `archive/baseline_v0/` (이전 베이스라인, 실행 대상 아님) |
-| 제외 | `.git`, `_incoming/`, `.venv`, 캐시, `outputs/synthetic/`, `outputs/verification/`(공개 원본 유래), `dist/`, `.blind_words` |
+| 제외 | `.git`, `_incoming/`, `.venv`, 캐시, `outputs/synthetic/`, `outputs/verification/`(공개 원본 유래 — `--include-public` 또는 `--include-verification` 때만 포함), `dist/`, `.blind_words` |
 
 - 학습 데이터를 빼고 공유할 때: `python scripts/make_submission.py --no-data`
+- 공개 원본을 함께 넣을 때(팀 결정 2026-10-01, 운영진 확인 2026-09-30): `python scripts/make_submission.py --include-public` — `config.json` `external.public_path` 의 zip/폴더에서 분석 스크립트가 읽는 `moldset_labeled.csv`, `labeled_data.csv`, `unlabeled_data.csv`(약 230 MB, 압축 후 약 60 MB) 를 `data/public/` 에 넣고 출처·SHA-256 을 `data/public/SOURCE.md` 에 적습니다. 용량이 문제면 `--public-file labeled_data.csv --public-file moldset_labeled.csv` 로 제한하고, `unlabeled_data.csv` 는 README 의 출처만 남깁니다.
 - zip 을 풀어서 바로 `pip install -r requirements.txt` → `python run_all.py` 로 재현됩니다.
 
 ## 누수 체크리스트 (모두 `tests/` 로 자동 검사)

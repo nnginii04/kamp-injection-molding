@@ -2,6 +2,7 @@
 data/raw/*
 !data/raw/.gitkeep
 data/synthetic/
+data/public/
 
 # outputs
 outputs/*
