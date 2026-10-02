@@ -83,6 +83,8 @@ def crosscheck(summ: pd.DataFrame, cv_summary: Path, out_dir: Path, custom_rule:
 
 
 def main() -> int:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description="팀 공통 평가: 예측 CSV → 결과표")
     ap.add_argument("--outputs", default="outputs", help="결과 폴더 (기본 outputs, 저장소 루트 기준)")
     ap.add_argument("--pred-dir", default=None, help="예측 CSV 폴더 (기본 <outputs>/predictions)")
