@@ -431,6 +431,8 @@ def hypothetical_selection(metrics, extra_metrics: dict, choices, sel, n_repeats
         parts.append(m)
     allm = pd.concat(parts, ignore_index=True)
     allm = allm[allm.cv_mode.eq(sel["cv_mode"]) & ~allm.model.str.startswith("dummy")]
+    excl = set(sel.get("exclude_models", []))  # 본 선택에서 제외한 모델(결합 3종)은 가상 선택에서도 제외 — 2-3 절에 별도 서술
+    allm = allm[~allm.model.map(lambda m: m.split("@")[0] in excl)]
 
     def cx(name):
         base, pooled = name.split("@")[0], "@pooled" in name

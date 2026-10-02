@@ -38,6 +38,7 @@ from src.plots import plt, savefig  # noqa: E402
 def select_model(table, p, sel, n_repeats):
     metric, mode = sel["metric"], sel["cv_mode"]
     cand = table[(table["product"] == p) & (table.cv_mode == mode) & (table.model != "dummy")].copy()
+    cand = cand[~cand.model.isin(sel.get("exclude_models", []))]  # 비교표에는 남기되 최종 후보에서 제외
     best = cand.sort_values(metric, ascending=False).iloc[0]
     chosen = best
     if sel.get("rule") == "one_se" and f"{metric}_sd" in cand.columns:
@@ -254,7 +255,8 @@ def main():
     metrics.to_csv(tab_dir / "cv_metrics_by_repeat.csv", index=False, encoding="utf-8-sig")
     num = [c for c in metrics.columns if c not in ("cv_mode", "dataset", "product", "model", "repeat", "scenario")]
     g = metrics.groupby(["cv_mode", "scenario", "dataset", "product", "model"])[num]
-    table = g.mean().join(g.std()[["shot_ap", "row_f1", "row_ap"]].add_suffix("_sd")).reset_index()
+    table = g.mean().join(g.std()[["shot_ap", "row_f1", "row_ap", "shot_ap_foldmean", "row_ap_foldmean"]]
+                          .add_suffix("_sd")).reset_index()
     table.to_csv(tab_dir / "cv_summary.csv", index=False, encoding="utf-8-sig")
 
     # 팀 공유용 분할표 + fold 수 점검 (run_cv 와 같은 cv_splits 사용)

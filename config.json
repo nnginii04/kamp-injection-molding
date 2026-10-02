@@ -16,7 +16,7 @@
   "holdout": {"enabled": false, "frac": 0.25, "_note": "팀 결정 전까지 끔. 후보 설계별 불량 수 시뮬레이션은 Phase 2 보고 참고."},
   "scenarios": ["separate"],
   "models": ["dummy", "spc_maxz", "iforest_normal", "ae_normal", "logreg", "logreg_spc", "logreg_if", "logreg_ae", "rf", "lgbm", "xgb", "catboost", "ensemble", "hybrid"],
-  "selection": {"cv_mode": "block", "metric": "shot_ap", "rule": "one_se"},
+  "selection": {"cv_mode": "block", "metric": "shot_ap", "rule": "one_se", "exclude_models": ["logreg_spc", "logreg_if", "logreg_ae"], "_note": "2026-10-02: 결합 모델 3종(지도 백분위 + 양품 이상점수 백분위 평균)을 최종 후보에서 제외. 이유: pooled OOF 에서의 우위(0.329 vs 0.188)가 fold 간 점수 눈금 차이에서 온 것으로 확인(10/1 회의, E1 fold 안 순위 0.60 vs 0.61, E3). fold 안 순위 평균(shot_ap_foldmean)은 지도 모델들이 반복 간 흔들림 안에서 구분되지 않아 선택 지표로 쓰기에 불안정 (2026-10-02 확인: 최고 iforest_normal 0.52±0.05, logreg 0.46±0.08) → 참고 열로만 보고. 지표·규칙은 9/26 사전 등록 그대로 유지."},
   "decision": {"rule": "budget", "budget": 0.02},
   "min_lift_vs_dummy": 1.5,
 

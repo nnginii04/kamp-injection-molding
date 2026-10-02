@@ -20,7 +20,7 @@ import pandas as pd
 from sklearn.base import clone
 from sklearn.model_selection import StratifiedGroupKFold
 
-from .evaluate import best_f1_threshold, evaluate_oof
+from .evaluate import best_f1_threshold, evaluate_oof, foldmean_ap
 from .models import make_model
 
 
@@ -146,13 +146,14 @@ def run_cv(lab: pd.DataFrame, feats: list[str], model_names: list[str], cfg: dic
             records.append(oof)
             thr_med = float(np.median(thr_list)) if thr_list else 0.5
             m_all = evaluate_oof(oof, cfg["inspection_budgets"])
+            m_all.update(foldmean_ap(oof))  # fold 안 순위 기준 AP (모델 선택용, 2026-10-01 결정)
             metrics_rows.append({"cv_mode": mode, "dataset": tag, "product": "all", "model": name,
                                  "repeat": rep, "thr_median": thr_med, **m_all})
             if tag == "pooled":  # 통합 모델도 제품별로 따로 평가
                 for prod, sub in oof.groupby("product"):
                     metrics_rows.append({"cv_mode": mode, "dataset": tag, "product": prod, "model": name,
                                          "repeat": rep, "thr_median": thr_med,
-                                         **evaluate_oof(sub, cfg["inspection_budgets"])})
+                                         **evaluate_oof(sub, cfg["inspection_budgets"]), **foldmean_ap(sub)})
             log(f"  [{tag}/{mode}] repeat {rep} {name:14s} shot_AP={m_all['shot_ap']:.3f} "
-                f"row_F1={m_all['row_f1']:.3f} ({time.time()-t0:.1f}s)")
+                f"(fold평균 {m_all['shot_ap_foldmean']:.3f}) row_F1={m_all['row_f1']:.3f} ({time.time()-t0:.1f}s)")
     return pd.concat(records, ignore_index=True), pd.DataFrame(metrics_rows), fitted
