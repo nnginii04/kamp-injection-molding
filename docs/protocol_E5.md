@@ -47,3 +47,8 @@ labeled 기록은 설비 전체 가동 기록의 일부이므로, 여기서의 "
 
 `outputs/e5/floor_ceiling.csv` (요약), `floor_ceiling_raw.csv`, `rule_sensitivity.csv`, `permutation_null.csv`, `permutation_summary.csv`, `floor_ceiling_<제품>.png`, `run_log.txt`.
 실행: `python scripts/e5_floor_ceiling.py --public <원본 폴더 또는 zip>`
+
+## 변경 기록
+
+- 2026-10-05 (순열검정 첫 실행 중, 결과 확인 전): CN7 순열 후 일부 block fold 에서 **학습 fold 의 불량이 0개**가 되어 로지스틱을 적합할 수 없음(실행 오류). 처리: 그 fold 의 점수를 학습 fold 불량률의 상수(정보 없음)로 둔다. 관측값 계산에는 해당 없음(실제 라벨은 모든 학습 fold 에 불량 있음). 상수 처리 횟수를 run_log 에 기록한다. 이 처리는 귀무 쪽 AP 를 낮추는 방향일 수 있어 p 값이 다소 유리해질 수 있음 → 보고서에 횟수와 함께 적는다.
+- 2026-10-05 (같은 실행, 결과 확인 전): 원본 기준 1행짜리 shot(CN7 1개 등)이 있어 2행 패턴과 섞어 순환하면 불량 수가 바뀜. 처리: 날짜 × shot 행 수(1행/2행)별로 따로 순환 이동한다. 불량 부품 수가 순열 전후 같은지 매번 확인(assert).
