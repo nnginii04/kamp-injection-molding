@@ -2,6 +2,7 @@
 import csv
 import hashlib
 import io
+import os
 import json
 from pathlib import Path
 import zipfile
@@ -16,7 +17,7 @@ from src.analysis.audit_b_final_metadata import append_notes, SPC_NOTE, REASON_N
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / 'outputs/analysis'
 SOURCE = ROOT / 'outputs/inspection/delay_replay_log_full.csv'
-ARCHIVE = Path('C:/Users/82102/Downloads/제조데이터.zip')
+ARCHIVE = Path(os.environ.get('KAMP_DELIVERED_ARCHIVE', ROOT.parent / '제조데이터.zip'))  # 전달본 zip 위치(환경변수), 로컬 경로 하드코딩 금지
 BASE = '제조데이터/kamp-injection-molding/outputs/analysis/'
 REPORT = 'cn7_logreg_e2_shot1173_analysis.md'
 Q1 = 'cn7_logreg_e2_q1_prediction_evidence.csv'
@@ -232,7 +233,7 @@ SPC는 총 64조건 중 16조건 포착, 48조건 미포착이다. 두 threshold
     assert sha(SOURCE)==source_hash
     meta=dict(source=str(SOURCE.relative_to(ROOT)),source_sha256=source_hash,source_lines='1-based physical CSV lines, header=1',
               target_rows=192,conditions_per_model=64,future_cn7_shots_per_condition=1389,all_conditions_verified=True,
-              source_archive=str(ARCHIVE),original_q34_sections_preserved=True,q34_sha256=kept_hashes,
+              source_archive=ARCHIVE.name,original_q34_sections_preserved=True,q34_sha256=kept_hashes,
               training_executed=False,replay_executed=False,source_csv_unchanged=True)
     (OUT/'cn7_e2_detail_update_verification.json').write_text(json.dumps(meta,indent=2,ensure_ascii=False),encoding='utf-8')
     print(json.dumps(meta,indent=2,ensure_ascii=False))

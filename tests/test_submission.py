@@ -1,8 +1,12 @@
 """제출 zip 스크립트(scripts/make_submission.py): 제외 규칙과 블라인드 검사 함수."""
 from __future__ import annotations
 
+import hashlib
 import sys
+import tempfile
 import unittest
+import zipfile
+from pathlib import Path
 
 from _common import ROOT
 
@@ -33,8 +37,34 @@ class TestSubmission(unittest.TestCase):
         kinds = {k for k, _ in hits}
         self.assertEqual(kinds, {"로컬경로", "이메일", "지정 단어"})
         self.assertEqual(ms.scan("b.txt", ("co-author " + "noreply" + "@" + "anthropic.com").encode(), []), [])
+        code = "z = (c" + "@" + "m.components_) + a" + "@" + "lr.coef_[0] + x" + "@" + "w.T(1)"
+        self.assertEqual(ms.scan("c.py", code.encode(), []), [])  # 행렬곱 @ 는 이메일이 아님
         self.assertEqual(ms.scan("홍길동.txt", b"", ["홍길동"]), [("파일 이름", "홍길동")])
         self.assertEqual(ms.scan("img.png", bytes([0xFF, 0xD8, 0xFF]), ["x"]), [])
+
+    def test_public_files_folder_zip_and_note(self):
+        body = b"a,b\n1,2\n"
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            for n in ms.PUBLIC_USED:
+                (d / n).write_bytes(body)
+            (d / "supervised_label_cn7.csv").write_bytes(b"x")  # 쓰지 않는 공개 파일은 넣지 않음
+            got = ms.public_files(d)
+            self.assertEqual([a for a, _ in got], [f"{ms.PUBLIC_ARC}/{n}" for n in ms.PUBLIC_USED])
+            self.assertEqual([a for a, _ in ms.public_files(d, ["labeled_data.csv"])],
+                             [f"{ms.PUBLIC_ARC}/labeled_data.csv"])
+            zp = d / "pub.zip"
+            with zipfile.ZipFile(zp, "w") as z:
+                for n in ms.PUBLIC_USED:
+                    z.writestr(f"04. Dataset_Molding/{n}", body)
+            self.assertEqual([(a, b) for a, b in ms.public_files(zp)], got)
+            (d / "unlabeled_data.csv").unlink()
+            self.assertEqual(len(ms.public_files(d)), 2)  # 없는 파일은 건너뜀
+            note = ms.public_source_note(got)
+            self.assertIn(hashlib.sha256(body).hexdigest(), note)
+            self.assertIn("moldset_labeled.csv", note)
+            self.assertEqual(ms.scan("SOURCE.md", note.encode(), []), [])  # 메모에 경로·메일 없음
+        self.assertTrue(set(ms.PUBLIC_USED) <= ms.PUBLIC_NAMES)
 
     def test_script_itself_is_clean(self):
         src = (ROOT / "scripts" / "make_submission.py").read_bytes()

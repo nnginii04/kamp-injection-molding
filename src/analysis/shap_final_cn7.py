@@ -4,6 +4,7 @@ Reuses shap_oof_explainer.attribution and the saved shap_case_inventory output.
 No tuning, new feature, alternative SHAP estimator, or other-model fit.
 """
 import io
+import os
 import json
 import hashlib
 import subprocess
@@ -27,7 +28,7 @@ from src.analysis.audit_b_final_metadata import append_notes, CLAMP_NOTE, REASON
 
 ROOT=Path(__file__).resolve().parents[2]
 OUT=ROOT/'outputs/analysis/shap_final_cn7'
-ARCHIVE=Path('C:/Users/82102/Downloads/제조데이터.zip')
+ARCHIVE=Path(os.environ.get('KAMP_DELIVERED_ARCHIVE',ROOT.parent/'제조데이터.zip'))  # 전달본 zip 위치(환경변수), 로컬 경로 하드코딩 금지
 ZIPBASE='제조데이터/kamp-injection-molding/'
 
 
