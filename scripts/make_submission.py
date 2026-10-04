@@ -46,7 +46,7 @@ GENERIC = {  # 패턴을 조각으로 조합 — 이 파일 자체가 검사에 
 ALLOWED = {"noreply@anthropic.com"}  # 커밋 도구 서명 등 개인정보가 아닌 주소
 PUBLIC_NAMES = {"labeled_data.csv", "unlabeled_data.csv", "moldset_labeled.csv", "supervised_label_cn7.csv"}
 # --include-public 때 넣는 파일 = 분석 스크립트가 실제로 읽는 것만
-# (scripts/external_experiments.py, e1_policy_comparison.py, oneside_matched.py, link_public.py, verify_public_link.py)
+# (scripts/external_experiments.py, e1_policy_comparison.py, e5_floor_ceiling.py, oneside_matched.py, link_public.py, verify_public_link.py)
 PUBLIC_USED = ("moldset_labeled.csv", "labeled_data.csv", "unlabeled_data.csv")
 PUBLIC_ARC = "data/public"  # zip 안에서 공개 원본이 놓이는 폴더
 PUBLIC_SOURCE = "KAMP 「사출성형기 AI 데이터셋」 원본 (04. Dataset_Molding.zip)"
@@ -151,7 +151,7 @@ def public_source_note(entries: list[tuple[str, bytes]]) -> str:
     L = ["# 공개 원본 (data/public/)", "",
          f"- 출처: {PUBLIC_SOURCE}. KAMP 에서 내려받은 파일을 수정 없이 그대로 넣음 (아래 SHA-256 으로 대조 가능).",
          "- 용도: 해석·검증·외부 실험 전용 — `scripts/external_experiments.py`, `scripts/e1_policy_comparison.py`, "
-         "`scripts/oneside_matched.py`, `scripts/link_public.py`, `scripts/verify_public_link.py` 가 읽는다. "
+         "`scripts/e5_floor_ceiling.py`, `scripts/oneside_matched.py`, `scripts/link_public.py`, `scripts/verify_public_link.py` 가 읽는다. "
          "모델 학습·선택(`run_all.py`)은 이 폴더를 읽지 않는다.",
          "- 근거: 운영진 확인(2026-09-30) — 출처·사용 이유·방법을 보고서에 밝히면 사용 가능. 보고서 본문에 그렇게 적었다.",
          "- 대회 파일과의 연결: 대회 labeled 의 `Unnamed: 0` = 원본 `moldset_labeled.csv` 의 `Unnamed: 0` "

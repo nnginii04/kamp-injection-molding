@@ -28,6 +28,7 @@ src/                 data · audit · features · cv · models · evaluate · ex
                      · key_figures · report · known_facts · synthetic
 evaluation/          팀 공통 평가 모듈 (예측 파일 형식: evaluation/README.md)
 scripts/             verify_public_link.py · link_public.py (공개 원본, 읽기 전용·기본 꺼짐)
+                     e5_floor_ceiling.py — 바닥(학습 없는 규칙)–모델–천장 비교 + 블록 순열검정 (사전 등록 docs/protocol_E5.md, 결과 outputs/e5/, 공개 원본 필요)
                      make_notebook.py (설명 노트북 생성·실행) · make_submission.py (제출 zip + 블라인드 검사)
 notebooks/           baseline_explained.ipynb (쉬운 한국어 설명, 실행 결과 포함)
 tests/               누수·형식 자동 검사 (unittest)
