@@ -4,10 +4,10 @@ from __future__ import annotations
 import argparse
 import importlib.metadata
 import json
+import os
 from pathlib import Path
 import platform
 import subprocess
-import sys
 
 import pandas as pd
 
@@ -19,12 +19,44 @@ ROOT = Path(__file__).resolve().parent
 OUT = ROOT / "outputs" / "experiments" / "shot_target"
 
 
+def relative_path(path, root):
+    return Path(os.path.relpath(path, root)).as_posix()
+
+
+def input_hashes(hashes, source, cfg):
+    """Normalize legacy absolute and filename keys to baseline-relative paths."""
+    data_dir = source / cfg["data_dir"]
+    aliases = {}
+    for files in cfg["products"].values():
+        for kind in ("labeled", "unlabeled"):
+            filename = str(files[kind]).replace("\\", "/")
+            path = data_dir / files[kind]
+            key = relative_path(path, source)
+            for alias in (filename, key, path.as_posix()):
+                aliases[alias] = key
+    normalized = {}
+    for path, digest in hashes.items():
+        path = str(path).replace("\\", "/")
+        key = aliases.get(path)
+        if key is None:
+            # Old manifests may have been saved in a different checkout.
+            matches = {value for alias, value in aliases.items()
+                       if alias == value and path.endswith("/" + alias)}
+            if len(matches) != 1:
+                raise ValueError(f"Unrecognized input hash path: {path}")
+            key = matches.pop()
+        if key in normalized and normalized[key] != digest:
+            raise ValueError(f"Conflicting input hashes: {key}")
+        normalized[key] = digest
+    return normalized
+
+
 def baseline_hashes(source):
     """Read-only inventory; experimental results are deliberately excluded."""
     paths = [ROOT / "config.json", source / "config.json"]
     for folder in (source / "data" / "raw", source / "outputs"):
         paths.extend(p for p in folder.rglob("*") if p.is_file() and "experiments" not in p.relative_to(folder).parts)
-    return {str(p): sha256(p) for p in paths}
+    return {relative_path(p, source): sha256(p) for p in paths}
 
 
 def main():
@@ -48,7 +80,7 @@ def main():
     manifest_path = source / "outputs" / "manifest.json"
     if manifest_path.exists():
         old = json.loads(manifest_path.read_text(encoding="utf-8"))
-        if old.get("input_sha256") != data["hashes"]:
+        if input_hashes(old.get("input_sha256", {}), source, cfg) != input_hashes(data["hashes"], source, cfg):
             raise ValueError("Data hashes differ from saved baseline manifest")
     base, dropped = select_base_features(data, data["feature_cols"], fcfg["drop_constant"])
     feats = check_feature_list(model_features(base, "separate", False))
@@ -85,7 +117,8 @@ def main():
         pd.DataFrame(reference_check).to_csv(OUT / "baseline_score_check.csv", index=False)
     if before != baseline_hashes(source):
         raise RuntimeError("Baseline inputs changed during the run")
-    manifest = dict(baseline_root=str(source), input_sha256=data["hashes"],
+    baseline_root = relative_path(source, ROOT)
+    manifest = dict(baseline_root=baseline_root, input_sha256=input_hashes(data["hashes"], source, cfg),
                     fold_sha256=sha256(fold_path), config_sha256=sha256(cfg_path),
                     features=feats, dropped_features=dropped, cv_mode="block",
                     n_repeats=cfg["cv"]["n_repeats"], n_splits=cfg["cv"]["n_splits"],
@@ -93,14 +126,14 @@ def main():
                     primary_metrics=["shot AP", "shot Recall@5%", "shot Recall@10%", "shot Recall@20%"],
                     target_definition="max(original row y) per shot; one training example per shot",
                     python=platform.python_version(),
-                    command=subprocess.list2cmdline([sys.executable, *sys.argv]),
+                    command=subprocess.list2cmdline(["python", "run_shot_experiment.py", "--baseline-root", baseline_root]),
                     baseline_files_unchanged=True, baseline_files_sha256=before,
                     baseline_score_check=reference_check,
                     versions={k: importlib.metadata.version(k) for k in ("numpy", "pandas", "scikit-learn", "scipy")},
                     git_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip())
     (OUT / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     print(report)
-    print(f"Saved to {OUT}")
+    print(f"Saved to {relative_path(OUT, ROOT)}")
 
 
 if __name__ == "__main__":

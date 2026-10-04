@@ -131,7 +131,7 @@ def main():
     path = OUT / f'{STEM}.csv'
     result.to_csv(path, index=False)
     pd.DataFrame(counts).to_csv(OUT / f'{STEM}_counts.csv', index=False)
-    meta = dict(main_commit=main_commit, branch=git('branch', '--show-current').decode().strip(),
+    meta = dict(main_commit=main_commit,
         existing_implementation='src/analysis/ambiguity.py:score_fold (unchanged)',
         existing_runner_split='fold_shot_r*: not block; no previous ambiguity output found in current checkout',
         train_fold_only=True, main_split_exact_match=True, baseline_oof_assignments_exact_match=True,
