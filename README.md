@@ -13,6 +13,8 @@ python run_all.py                   # data/raw/ 의 대회 CSV 4개 → outputs/
 python run_evaluation.py            # 팀 공통 평가 + report.md 수치 검산 → outputs/evaluation/
 python scripts/inspection_priority.py --models cn7=logreg rg3=lgbm --ambiguity outputs/analysis/ambiguity_scores_for_ablation.csv
                                     # 검사 우선순위: 3구역 · Ablation · Budget Curve → outputs/inspection/
+python scripts/e6_recovery.py --public data/public && python scripts/e6_hold_replay.py --public data/public
+                                    # E6 정지 후 회복 곡선 · 격리 운영안 → outputs/e6/ (공개 원본 필요, 약 40초)
 ```
 
 > ⚠ `--fast` 는 반복을 2회로 줄인 **동작 확인용**입니다. 반복이 적으면 1-SE 규칙의 표준오차가 달라져 **선택 모델이 바뀔 수 있습니다**
@@ -32,6 +34,7 @@ evaluation/          팀 공통 평가 모듈 (예측 파일 형식: evaluation/
 scripts/             inspection_priority.py (검사 우선순위: 불확실성 · 3구역 · Ablation · Budget Curve)
                      e1_policy_comparison.py · e2_delay_replay.py · e3_robustness.py (검사 방법 비교 · 검사 지연 재현 · 강건성, 공개 원본 필요)
                      e5_floor_ceiling.py — 바닥(학습 없는 규칙)–모델–천장 비교 + 블록 순열검정 (사전 등록 docs/protocol_E5.md, 결과 outputs/e5/, 공개 원본 필요)
+                     e6_recovery.py · e6_hold_replay.py — 정지 후 회복 곡선(설비 가동 로그) · 경보 후 격리 운영안 재생 (사전 등록 docs/protocol_E6.md, 결과 outputs/e6/, 공개 원본 필요)
                      guidebook_audit.py · guidebook_split_check.py (가이드북 검증 방식 재현)
                      verify_public_link.py · link_public.py (공개 원본, 읽기 전용·기본 꺼짐)
                      make_notebook.py (설명 노트북 생성·실행) · make_submission.py (제출 zip + 블라인드 검사)
@@ -102,6 +105,19 @@ block CV 예측(반복 5회)으로 shot 점수 순위를 매겨 검사량별 불
 - **Ablation**: 모델 점수에 불확실성(반복 5회 예측의 표준편차)·Ambiguity 를 더한 순위는 CN7 곡선 면적이 0.87 → 0.71~0.78 로 낮아져 **모델 점수만** 사용합니다. Ambiguity 는 오류 해석에만 씁니다.
 - 옵션: `--rank fold`(기본) / `--rank pooled`, `--ambiguity <csv>`, `--novelty <csv>`. 입력은 `outputs/predictions/pipeline_<모델>.csv` 입니다.
 
+### 격리(hold) 운영안 — E6 (`scripts/e6_hold_replay.py` → `outputs/e6/`)
+
+검사 순위를 '고정 비율'로 운영하면 불량이 연속으로 몰려 올 때 검사 용량에 막힙니다. 대회 이후 기간(CN7 10/27~11/03, 부품 2,763개, 불량 11개, 외부 라벨·탐색적 날짜 검증)에서 같은 로지스틱 점수·같은 임계값(대회 기간 block OOF 상위 2%)으로 재생한 결과:
+
+| 운영 방식 | 포착 불량 | 격리(나중 검사) 부품 |
+|---|---|---|
+| 고정 용량 검사 (10 shot당 2개 / 4개, E2) | 2 / 4 | 4 / 6 |
+| 정지(기록 공백 5분 이상) 후 5 shot 격리 | 10 | 99 (3.6%) |
+| **모델 경보 shot + 다음 3 shot 격리 (운영안)** | **10** | **22 (0.8%)** |
+
+- 설비 가동 로그(공개 원본 `unlabeled_data.csv`)의 정지 704건 중 58%는 첫 shot 부터 정상 범위였고, 회복에 걸린 shot 수는 정지 길이와 뚜렷한 관계가 없습니다(`scripts/e6_recovery.py`). 그래서 정지 시간 고정 규칙 대신 공정값 기반 경보를 씁니다.
+- 11/03 한쪽 미성형 1건은 어떤 규칙도 잡지 못했고, RG3 는 모든 규칙이 무작위 수준입니다. 결과를 본 뒤 추가한 '회복 판정 격리' 규칙은 `docs/protocol_E6.md` 에 사후·탐색으로 표기했습니다.
+
 ## 제출물 구성 (`python scripts/make_submission.py` → `dist/submission.zip`)
 
 대회 요건(requirements, 학습 데이터, README, 테스트 예측결과)을 스크립트가 점검하고, 블라인드 검사(이름·이메일·로컬 경로)도 함께 합니다.
@@ -171,7 +187,7 @@ KAMP 공개 원본(사출성형기 AI 데이터셋)은 운영진 확인(2026-09-
 | 출처 | 중소벤처기업부, Korea AI Manufacturing Platform(KAMP), 사출성형기 AI 데이터셋, KAIST(울산과학기술원, ㈜이피엠솔루션즈), 2020.12.14., www.kamp-ai.kr |
 | 사유 | 대회 파일에 없는 시각 · 캐비티(LH/RH) · 불량 사유 · 원 단위 값과 대회 기간 이후 생산분이 있어, 데이터 구조 확인과 오류 해석, 날짜 단위 확인이 가능함 |
 | 방법 | 대회 파일과 행 단위로 연결해 라벨이 100% 일치함을 확인한 뒤 읽기 전용으로 사용 (`scripts/verify_public_link.py`, `scripts/link_public.py`) |
-| 쓰는 곳 | ① 데이터 구조·누수 확인(사실 6, 10) ② 오류 해석(불량 사유, 캐비티) ③ 대회 이후 기간의 탐색적 날짜 검증(`scripts/e1~e3`). 독립 최종 테스트가 아님 |
+| 쓰는 곳 | ① 데이터 구조·누수 확인(사실 6, 10) ② 오류 해석(불량 사유, 캐비티) ③ 대회 이후 기간의 탐색적 날짜 검증(`scripts/e1~e3`, `e5`, `e6_hold_replay.py`). 독립 최종 테스트가 아님 ④ 설비 가동 로그의 정지–재가동 분석(`scripts/e6_recovery.py`, 라벨 미사용) |
 | 쓰지 않는 곳 | **모델 학습과 입력**. 최종 모델은 대회 CSV 로만 학습하고 `config.json` 의 `external.enabled` 는 `false` 입니다. LH/RH 구분도 모델 입력에 넣지 않습니다 |
 
 - 원본 파일은 저장소의 `data/raw/` 에 넣지 않습니다. 제출 zip 에는 `python scripts/make_submission.py --include-public` 으로 `data/public/` 에 넣고 출처·SHA-256 을 `data/public/SOURCE.md` 에 적습니다.
