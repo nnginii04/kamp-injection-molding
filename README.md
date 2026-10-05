@@ -9,7 +9,7 @@
 
 ```bash
 pip install -r requirements.txt     # Python 3.13, 버전 고정
-python run_all.py                   # data/raw/ 의 대회 CSV 4개 → outputs/ (후보 모델 14개, 2코어 환경에서 약 48분. --fast 는 반복 2회로 더 빠름)
+python run_all.py                   # data/raw/ 의 대회 CSV 4개 → outputs/ (후보 모델 14개 · 14코어 맥북 약 15분, 2코어 환경 약 1~2시간 · --fast 는 반복 2회로 더 빠름)
 python run_evaluation.py            # 팀 공통 평가 + report.md 수치 검산 → outputs/evaluation/
 python scripts/inspection_priority.py --models cn7=logreg rg3=lgbm --ambiguity outputs/analysis/ambiguity_scores_for_ablation.csv
                                     # 검사 우선순위: 3구역 · Ablation · Budget Curve → outputs/inspection/
@@ -31,6 +31,7 @@ src/                 data · audit · features · cv · models · evaluate · ex
 evaluation/          팀 공통 평가 모듈 (예측 파일 형식: evaluation/README.md)
 scripts/             inspection_priority.py (검사 우선순위: 불확실성 · 3구역 · Ablation · Budget Curve)
                      e1_policy_comparison.py · e2_delay_replay.py · e3_robustness.py (검사 방법 비교 · 검사 지연 재현 · 강건성, 공개 원본 필요)
+                     e5_floor_ceiling.py — 바닥(학습 없는 규칙)–모델–천장 비교 + 블록 순열검정 (사전 등록 docs/protocol_E5.md, 결과 outputs/e5/, 공개 원본 필요)
                      guidebook_audit.py · guidebook_split_check.py (가이드북 검증 방식 재현)
                      verify_public_link.py · link_public.py (공개 원본, 읽기 전용·기본 꺼짐)
                      make_notebook.py (설명 노트북 생성·실행) · make_submission.py (제출 zip + 블라인드 검사)
@@ -117,7 +118,7 @@ block CV 예측(반복 5회)으로 shot 점수 순위를 매겨 검사량별 불
 
 - 학습 데이터를 빼고 공유할 때: `python scripts/make_submission.py --no-data`
 - 공개 원본을 함께 넣을 때(팀 결정 2026-10-01, 운영진 확인 2026-09-30): `python scripts/make_submission.py --include-public` — `config.json` `external.public_path` 의 zip/폴더에서 분석 스크립트가 읽는 `moldset_labeled.csv`, `labeled_data.csv`, `unlabeled_data.csv`(약 230 MB, 압축 후 약 60 MB) 를 `data/public/` 에 넣고 출처·SHA-256 을 `data/public/SOURCE.md` 에 적습니다. 용량이 문제면 `--public-file labeled_data.csv --public-file moldset_labeled.csv` 로 제한하고, `unlabeled_data.csv` 는 README 의 출처만 남깁니다.
-- zip 을 풀어서 바로 `pip install -r requirements.txt` → `python run_all.py` 로 재현됩니다.
+- zip 을 풀어서 바로 `pip install -r requirements.txt` → `python run_all.py` 로 재현됩니다. 재현 테스트(2026-10-05, 제출 zip을 새 폴더·새 가상환경 Python 3.13 / Linux 2코어에서 실행): 선택 모델(CN7 `logreg` 0.188, RG3 `lgbm` 0.052)·테스트 예측결과·unlabeled 예측이 freeze 결과와 1e-11 이내로 일치, `run_evaluation.py` 검산 504개 일치. 트리 계열(XGBoost·RandomForest·CatBoost)은 CPU·스레드 환경에 따라 소수 셋째 자리가 달라질 수 있습니다(예: CN7 block XGBoost 0.164 ↔ 0.183). 선택 결과에는 영향이 없습니다.
 
 ### 예측 결과 파일 두 가지
 
