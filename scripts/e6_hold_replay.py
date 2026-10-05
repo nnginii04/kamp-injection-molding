@@ -7,7 +7,8 @@
 - H3 의 N = outputs/e6/hold_rule_cn7.csv (10/16 이전 설비 로그로 결정, e6_recovery.py 먼저 실행).
 
 실행: python scripts/e6_hold_replay.py --public <원본 폴더 또는 zip>
-결과: outputs/e6/hold_replay.csv (요약), hold_replay_events.csv (사건별), hold_replay_shots.csv (shot 별 격리 사유)
+결과: outputs/e6/hold_replay.csv (요약), hold_replay_events.csv (사건별), hold_replay_shots.csv (shot 별 격리 사유),
+      future_stops_{cn7,rg3}.csv (미래 기간 정지별 공정값·경보·불량, 상위 2 % 임계값)
 """
 from __future__ import annotations
 
@@ -120,6 +121,24 @@ def events(S: pd.DataFrame, gap: int = 3):
     return ev + ([cur] if cur else [])
 
 
+def stop_table(S: pd.DataFrame, H: dict, first_gap: float | None) -> pd.DataFrame:
+    """정지(간격 ≥ 5분)마다: 첫 shot·첫 5 shot 충전/사출시간, 회복 판정 격리 shot 수, 첫 5 shot 경보·불량, 세션 불량."""
+    gap = S["gap_min"].to_numpy().copy()
+    gap[0] = first_gap if first_gap is not None else np.inf
+    idx = list(np.where(gap >= G)[0]) + [len(S)]
+    rows = []
+    for a, b in zip(idx[:-1], idx[1:]):
+        w = slice(a, min(a + 5, b))
+        rows.append(dict(start=str(S["t"].iat[a]), gap_min=round(float(gap[a]), 1),
+                         fill_first=round(float(S["Filling_Time"].iat[a]), 2),
+                         fill_max5=round(float(S["Filling_Time"].iloc[w].max()), 2),
+                         inj_max5=round(float(S["Injection_Time"].iloc[w].max()), 2),
+                         h5_hold_shots=int(H["H5_recovery*"][a:b].sum()), alarms5=int(H["H1_alarm"][w].sum()),
+                         defect_parts_first5=int(S["defects"].iloc[w].sum()),
+                         defect_parts_session=int(S["defects"].iloc[a:b].sum()), session_shots=b - a))
+    return pd.DataFrame(rows)
+
+
 def summarize(S, H, period, p, thr_name, thr, n_stops, skipped):
     P, N = int(S["defects"].sum()), int(S["parts"].sum())
     EV = events(S)
@@ -179,6 +198,8 @@ def main():
                 r, e = summarize(S, H, period, p, qn, thr, ns, sk)
                 summ += r
                 evs += e
+                if qn == "top2" and period == "future":
+                    stop_table(S, H, fg).to_csv(out / f"future_stops_{p}.csv", index=False, encoding="utf-8-sig")
                 if qn == "top2":
                     T = S[["t", "parts", "defects", "score", "gap_min", "Filling_Time", "Injection_Time"]].copy()
                     for name in ("H1_alarm", f"H2_alarm+{MAIN_K}", "H3_stopN", "H5_recovery*"):
